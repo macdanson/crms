@@ -1,4 +1,5 @@
 # Crime / Case Records Management System
+
 ## Developer Implementation & Security Guide
 
 **Document type:** Technical implementation guide  
@@ -94,13 +95,13 @@ Confirm applicable obligations under Uganda’s Data Protection and Privacy Act,
 
 Classify data before implementing screens, APIs, reports or exports.
 
-| Classification | Examples | Minimum handling |
-|---|---|---|
-| Restricted personal data | NIN, passport, driving permit, phone, address, date of birth | Application-level encryption where appropriate, masking, tightly controlled access |
-| Highly restricted case data | Allegations, suspect links, investigation details, court outcomes, conviction data | Explicit policy checks, access logging, purpose limitation, strict export controls |
-| Confidential operational data | Officer notes, assignments, internal case workflow | Role and case-based access; audit material changes |
-| Internal administrative data | Station configuration, user roles, non-sensitive settings | Authenticated access and administrative audit |
-| De-identified statistical data | Aggregated crime counts and trends | Re-identification risk review; suppress small groups where appropriate |
+| Classification                 | Examples                                                                           | Minimum handling                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Restricted personal data       | NIN, passport, driving permit, phone, address, date of birth                       | Application-level encryption where appropriate, masking, tightly controlled access |
+| Highly restricted case data    | Allegations, suspect links, investigation details, court outcomes, conviction data | Explicit policy checks, access logging, purpose limitation, strict export controls |
+| Confidential operational data  | Officer notes, assignments, internal case workflow                                 | Role and case-based access; audit material changes                                 |
+| Internal administrative data   | Station configuration, user roles, non-sensitive settings                          | Authenticated access and administrative audit                                      |
+| De-identified statistical data | Aggregated crime counts and trends                                                 | Re-identification risk review; suppress small groups where appropriate             |
 
 ### 3.1 Data minimisation
 
@@ -1063,21 +1064,21 @@ This module should not be represented as a full digital evidence chain-of-custod
 
 The final technology choices must be confirmed against hosting, support and procurement requirements. A possible implementation using the Laravel ecosystem is:
 
-| Layer | Suggested approach |
-|---|---|
-| Web application | Supported Laravel version |
-| UI | Livewire or another agreed frontend |
-| Database | PostgreSQL or MySQL, selected after architecture review |
-| Cache/session/queues | Redis on private network |
-| Private documents | Approved encrypted object/file storage |
-| Authentication | Laravel authentication plus MFA, or institutional identity provider |
-| Authorisation | Policies/gates with RBAC and contextual checks |
-| Encryption keys | Approved KMS/HSM or managed key service |
-| Audit/security monitoring | Separate protected audit pipeline and SIEM |
-| Edge security | Firewall, reverse proxy and WAF |
-| Deployment | Hardened Linux, Nginx and PHP-FPM or approved platform |
-| Backups/DR | Encrypted, isolated backup and recovery environment |
-| CI/CD | Protected repository, automated checks and controlled release approvals |
+| Layer                     | Suggested approach                                                      |
+| ------------------------- | ----------------------------------------------------------------------- |
+| Web application           | Supported Laravel version                                               |
+| UI                        | Livewire or another agreed frontend                                     |
+| Database                  | PostgreSQL or MySQL, selected after architecture review                 |
+| Cache/session/queues      | Redis on private network                                                |
+| Private documents         | Approved encrypted object/file storage                                  |
+| Authentication            | Laravel authentication plus MFA, or institutional identity provider     |
+| Authorisation             | Policies/gates with RBAC and contextual checks                          |
+| Encryption keys           | Approved KMS/HSM or managed key service                                 |
+| Audit/security monitoring | Separate protected audit pipeline and SIEM                              |
+| Edge security             | Firewall, reverse proxy and WAF                                         |
+| Deployment                | Hardened Linux, Nginx and PHP-FPM or approved platform                  |
+| Backups/DR                | Encrypted, isolated backup and recovery environment                     |
+| CI/CD                     | Protected repository, automated checks and controlled release approvals |
 
 ### 28.1 Logical application boundaries
 
@@ -1266,18 +1267,18 @@ Use this as a working checklist. Items requiring institutional decisions must re
 
 Confirm measurable targets with the client and infrastructure team. Do not assume these values without agreement.
 
-| Area | Requirement to define |
-|---|---|
-| Availability | Service hours, uptime target and maintenance windows |
-| Performance | Search response time and concurrent-user expectations |
-| Scalability | Expected districts, stations, users, records and annual growth |
-| Security | Security baseline, MFA, encryption and independent testing |
-| Audit | Events captured, retention and review responsibilities |
-| Recovery | Approved RPO, RTO and recovery test frequency |
-| Accessibility | Supported devices, browsers and accessibility requirements |
-| Usability | Training, language and station workflow needs |
-| Interoperability | Approved APIs and external system interfaces |
-| Maintainability | Supported versions, patching and support arrangements |
+| Area             | Requirement to define                                          |
+| ---------------- | -------------------------------------------------------------- |
+| Availability     | Service hours, uptime target and maintenance windows           |
+| Performance      | Search response time and concurrent-user expectations          |
+| Scalability      | Expected districts, stations, users, records and annual growth |
+| Security         | Security baseline, MFA, encryption and independent testing     |
+| Audit            | Events captured, retention and review responsibilities         |
+| Recovery         | Approved RPO, RTO and recovery test frequency                  |
+| Accessibility    | Supported devices, browsers and accessibility requirements     |
+| Usability        | Training, language and station workflow needs                  |
+| Interoperability | Approved APIs and external system interfaces                   |
+| Maintainability  | Supported versions, patching and support arrangements          |
 
 ---
 
