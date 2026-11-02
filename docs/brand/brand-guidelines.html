@@ -1,0 +1,1759 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>CRMS Brand Guidelines</title>
+        <link rel="icon" href="../../public/favicon.svg" type="image/svg+xml" />
+        <style>
+            :root {
+                --crest-50: #f3f5fa;
+                --crest-100: #e8ecf4;
+                --crest-200: #d2d8e9;
+                --crest-300: #bbc5dd;
+                --crest-400: #8e9ec7;
+                --crest-500: #6177b1;
+                --crest-600: #1d3c8f;
+                --crest-700: #173072;
+                --crest-800: #12275c;
+                --crest-900: #0b1b45;
+                --crest-950: #07112d;
+                --gold-100: #faf1d6;
+                --gold-500: #d4a017;
+                --gold-700: #8a6500;
+                --signal-500: #c8102e;
+                --success: #1f7a4d;
+                --warning: #a86400;
+                --info: #5b6578;
+                --ink: #0f172a;
+                --text: #334155;
+                --muted: #475569;
+                --line: #e2e6ee;
+                --surface: #f5f7fb;
+                --card: #ffffff;
+                --sans:
+                    Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto,
+                    sans-serif;
+                --mono:
+                    'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas,
+                    monospace;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html {
+                scroll-behavior: smooth;
+            }
+            body {
+                margin: 0;
+                font-family: var(--sans);
+                color: var(--text);
+                background: var(--surface);
+                line-height: 1.6;
+            }
+            a {
+                color: var(--crest-600);
+            }
+            code,
+            .mono {
+                font-family: var(--mono);
+                font-size: 0.92em;
+            }
+            .wrap {
+                max-width: 1120px;
+                margin: 0 auto;
+                padding: 0 24px;
+            }
+            header.hero {
+                background: var(--crest-900);
+                color: #fff;
+                padding: 64px 0 56px;
+                position: relative;
+                overflow: hidden;
+                background-image:
+                    radial-gradient(
+                        circle at 15% 10%,
+                        rgba(29, 60, 143, 0.65),
+                        transparent 55%
+                    ),
+                    radial-gradient(
+                        circle at 90% 100%,
+                        rgba(212, 160, 23, 0.16),
+                        transparent 45%
+                    ),
+                    repeating-radial-gradient(
+                        circle at 0 100%,
+                        rgba(255, 255, 255, 0.04) 0 1px,
+                        transparent 1px 22px
+                    );
+            }
+            .hero .kicker {
+                color: var(--gold-500);
+                letter-spacing: 0.22em;
+                text-transform: uppercase;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            .hero h1 {
+                font-size: clamp(32px, 5vw, 52px);
+                line-height: 1.1;
+                margin: 14px 0 12px;
+                font-weight: 800;
+            }
+            .hero p {
+                max-width: 640px;
+                color: var(--crest-200);
+                font-size: 17px;
+            }
+            .hero img.lockup {
+                width: min(420px, 100%);
+                margin-bottom: 36px;
+            }
+            .hero .meta {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px 24px;
+                margin-top: 28px;
+                font-size: 13px;
+                color: var(--crest-300);
+            }
+            nav.toc {
+                position: sticky;
+                top: 0;
+                z-index: 5;
+                background: rgba(255, 255, 255, 0.92);
+                backdrop-filter: blur(8px);
+                border-bottom: 1px solid var(--line);
+            }
+            nav.toc .wrap {
+                display: flex;
+                gap: 20px;
+                overflow-x: auto;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                font-size: 14px;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+            nav.toc a {
+                text-decoration: none;
+                color: var(--muted);
+            }
+            nav.toc a:hover {
+                color: var(--crest-600);
+            }
+            section {
+                padding: 56px 0;
+                border-bottom: 1px solid var(--line);
+            }
+            section:nth-of-type(even) {
+                background: #fff;
+            }
+            h2 {
+                font-size: 28px;
+                color: var(--crest-900);
+                margin: 0 0 6px;
+                letter-spacing: -0.01em;
+            }
+            h2 .num {
+                color: var(--gold-700);
+                font-family: var(--mono);
+                font-size: 16px;
+                margin-right: 10px;
+                vertical-align: middle;
+            }
+            h3 {
+                color: var(--crest-900);
+                font-size: 18px;
+                margin: 32px 0 8px;
+            }
+            .lead {
+                max-width: 760px;
+                color: var(--muted);
+                font-size: 16px;
+            }
+            .grid {
+                display: grid;
+                gap: 20px;
+            }
+            .g2 {
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            }
+            .g3 {
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            }
+            .g4 {
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            }
+            .card {
+                background: var(--card);
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 20px;
+            }
+            .tile {
+                border-radius: 12px;
+                border: 1px solid var(--line);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 200px;
+                padding: 28px;
+                background: #fff;
+            }
+            .tile.dark {
+                background: var(--crest-900);
+                border-color: var(--crest-900);
+            }
+            .tile.crest {
+                background: var(--crest-600);
+                border-color: var(--crest-600);
+            }
+            .tile.grid-bg {
+                background-color: #fff;
+                background-image:
+                    linear-gradient(var(--crest-100) 1px, transparent 1px),
+                    linear-gradient(
+                        90deg,
+                        var(--crest-100) 1px,
+                        transparent 1px
+                    );
+                background-size: 16px 16px;
+            }
+            .caption {
+                font-size: 13px;
+                color: var(--muted);
+                margin-top: 10px;
+            }
+            .caption strong {
+                color: var(--ink);
+            }
+            .swatch {
+                border-radius: 12px;
+                overflow: hidden;
+                border: 1px solid var(--line);
+                background: #fff;
+            }
+            .swatch .chip {
+                height: 110px;
+                padding: 14px;
+                display: flex;
+                align-items: flex-end;
+                font-weight: 700;
+                font-size: 14px;
+            }
+            .swatch .info {
+                padding: 14px;
+                font-size: 13px;
+            }
+            .swatch .info b {
+                display: block;
+                color: var(--ink);
+                font-size: 15px;
+            }
+            .swatch .info .mono {
+                color: var(--muted);
+            }
+            .ramp {
+                display: grid;
+                grid-template-columns: repeat(11, 1fr);
+                border-radius: 10px;
+                overflow: hidden;
+                border: 1px solid var(--line);
+            }
+            .ramp div {
+                height: 64px;
+                font-family: var(--mono);
+                font-size: 10px;
+                display: flex;
+                align-items: flex-end;
+                padding: 6px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+                background: #fff;
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                overflow: hidden;
+            }
+            th,
+            td {
+                text-align: left;
+                padding: 10px 14px;
+                border-bottom: 1px solid var(--line);
+                vertical-align: top;
+            }
+            th {
+                background: var(--crest-50);
+                color: var(--crest-900);
+                font-size: 12px;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+            tr:last-child td {
+                border-bottom: none;
+            }
+            .pill {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            .pass {
+                background: #e9f2ed;
+                color: var(--success);
+            }
+            .aaa {
+                background: var(--crest-100);
+                color: var(--crest-700);
+            }
+            .large {
+                background: var(--gold-100);
+                color: var(--gold-700);
+            }
+            .fail {
+                background: #fae7ea;
+                color: var(--signal-500);
+            }
+            .sample {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 64px;
+                height: 32px;
+                border-radius: 6px;
+                font-weight: 700;
+                padding: 0 10px;
+            }
+            .do,
+            .dont {
+                border-radius: 12px;
+                padding: 16px;
+                border: 1px solid var(--line);
+                background: #fff;
+            }
+            .do h4,
+            .dont h4 {
+                margin: 0 0 8px;
+                font-size: 14px;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+            }
+            .do h4 {
+                color: var(--success);
+            }
+            .dont h4 {
+                color: var(--signal-500);
+            }
+            .do ul,
+            .dont ul {
+                margin: 0;
+                padding-left: 18px;
+                font-size: 14px;
+            }
+            .type-row {
+                display: grid;
+                grid-template-columns: 150px 1fr;
+                gap: 16px;
+                align-items: baseline;
+                padding: 14px 0;
+                border-bottom: 1px solid var(--line);
+            }
+            .type-row:last-child {
+                border-bottom: none;
+            }
+            .type-row .spec {
+                font-family: var(--mono);
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                height: 36px;
+                padding: 0 16px;
+                border-radius: 6px;
+                font-weight: 600;
+                font-size: 14px;
+                border: 1px solid transparent;
+            }
+            .btn.primary {
+                background: var(--crest-600);
+                color: #fff;
+            }
+            .btn.default {
+                background: #fff;
+                border-color: #d6dbe5;
+                color: var(--text);
+            }
+            .btn.danger {
+                background: #fae7ea;
+                border-color: #efb7c0;
+                color: var(--signal-500);
+            }
+            .tag {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .clearspace {
+                position: relative;
+                display: inline-block;
+                padding: 28px;
+                outline: 2px dashed var(--gold-500);
+                outline-offset: -2px;
+                background: repeating-linear-gradient(
+                    45deg,
+                    rgba(212, 160, 23, 0.08) 0 6px,
+                    transparent 6px 12px
+                );
+            }
+            .clearspace img {
+                display: block;
+                width: 160px;
+                background: #fff;
+            }
+            .sizes {
+                display: flex;
+                align-items: flex-end;
+                gap: 28px;
+                flex-wrap: wrap;
+            }
+            .sizes figure {
+                margin: 0;
+                text-align: center;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .bar {
+                height: 10px;
+                border-radius: 99px;
+                background: var(--crest-100);
+                overflow: hidden;
+            }
+            .bar span {
+                display: block;
+                height: 100%;
+                background: var(--crest-600);
+            }
+            footer {
+                padding: 40px 0 60px;
+                font-size: 13px;
+                color: var(--muted);
+            }
+            @media (max-width: 640px) {
+                .type-row {
+                    grid-template-columns: 1fr;
+                    gap: 4px;
+                }
+                .ramp div {
+                    font-size: 0;
+                }
+                section {
+                    padding: 40px 0;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header class="hero">
+            <div class="wrap">
+                <img
+                    class="lockup"
+                    src="../../public/brand/crms-logo-reversed.svg"
+                    alt="CRMS — Crime Records Management System, Uganda Police Force"
+                />
+                <div class="kicker">Brand &amp; design system · v1.0</div>
+                <h1>Accurate records.<br />Accountable access.</h1>
+                <p>
+                    Identity, interface and quality benchmarks for the Crime /
+                    Case Records Management System. Everything here is
+                    implemented in the codebase: tokens in
+                    <code>resources/css/app.css</code>, components in
+                    <code>resources/js/components</code>, assets in
+                    <code>public/brand</code>.
+                </p>
+                <div class="meta">
+                    <span>Derived from the Uganda Police crest</span
+                    ><span>UI framework: Element Plus</span
+                    ><span>Accessibility target: WCAG 2.2 AA</span
+                    ><span>November 2026</span>
+                </div>
+            </div>
+        </header>
+
+        <nav class="toc" aria-label="Contents">
+            <div class="wrap">
+                <a href="#foundations">Foundations</a><a href="#logo">Logo</a
+                ><a href="#colour">Colour</a><a href="#type">Typography</a>
+                <a href="#ui">Interface</a><a href="#voice">Voice</a
+                ><a href="#benchmarks">Benchmarks</a
+                ><a href="#assets">Assets</a>
+            </div>
+        </nav>
+
+        <!-- 01 Foundations -->
+        <section id="foundations">
+            <div class="wrap">
+                <h2><span class="num">01</span>Brand foundations</h2>
+                <p class="lead">
+                    CRMS is an operational tool for police officers handling
+                    highly sensitive personal data. The brand must signal
+                    official authority and calm reliability, never drama. It is
+                    a sub-brand of the Uganda Police Force: it borrows the
+                    crest's symbols and colours but is its own mark, so the
+                    official force emblem keeps its ceremonial role.
+                </p>
+
+                <div class="g4 grid" style="margin-top: 28px">
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Authoritative</b>
+                        <p class="caption">
+                            Official, structured, unmistakably a state system.
+                            Navy dominates.
+                        </p>
+                    </div>
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Trustworthy</b>
+                        <p class="caption">
+                            Plain language, predictable layouts, no hidden
+                            behaviour.
+                        </p>
+                    </div>
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Accountable</b>
+                        <p class="caption">
+                            Constant, quiet reminders that access is recorded
+                            and audited.
+                        </p>
+                    </div>
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Fair</b>
+                        <p class="caption">
+                            Neutral presentation of people. An allegation never
+                            looks like a conviction.
+                        </p>
+                    </div>
+                </div>
+
+                <h3>From crest to mark</h3>
+                <div class="g2 grid" style="align-items: center">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Crest element</th>
+                                <th>In the CRMS mark</th>
+                                <th>Meaning</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Grey crowned crane</td>
+                                <td>
+                                    White crane head and neck rising inside the
+                                    shield
+                                </td>
+                                <td>
+                                    National identity; vigilance, looking ahead
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Golden crest feathers</td>
+                                <td>Six-ray gold crown with bead tips</td>
+                                <td>Honour and the duty of care</td>
+                            </tr>
+                            <tr>
+                                <td>Red wattle</td>
+                                <td>Single Signal Red accent</td>
+                                <td>Alertness; the only red in the mark</td>
+                            </tr>
+                            <tr>
+                                <td>Laurel wreath</td>
+                                <td>Two gold laurel sprigs (full mark only)</td>
+                                <td>Integrity, service</td>
+                            </tr>
+                            <tr>
+                                <td>"Protect &amp; Serve" ribbon</td>
+                                <td>Shield silhouette</td>
+                                <td>
+                                    Protection of people <em>and</em> of their
+                                    data
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="tile grid-bg">
+                        <img
+                            src="../../public/brand/crms-mark.svg"
+                            alt="CRMS crane shield mark"
+                            width="220"
+                        />
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 02 Logo -->
+        <section id="logo">
+            <div class="wrap">
+                <h2><span class="num">02</span>Logo system</h2>
+                <p class="lead">
+                    Four approved artworks. Always use the supplied files or the
+                    <code>AppLogo</code> / <code>AppLogoMark</code> Vue
+                    components; never redraw, retype or recolour them.
+                </p>
+
+                <div class="g2 grid" style="margin-top: 24px">
+                    <div>
+                        <div class="tile">
+                            <img
+                                src="../../public/brand/crms-logo.svg"
+                                alt="Primary lockup"
+                                style="width: 100%; max-width: 380px"
+                            />
+                        </div>
+                        <p class="caption">
+                            <strong>Primary lockup</strong> ·
+                            <code>crms-logo.svg</code>. Mark, wordmark and
+                            descriptor for light backgrounds. Default choice.
+                        </p>
+                    </div>
+                    <div>
+                        <div class="tile dark">
+                            <img
+                                src="../../public/brand/crms-logo-reversed.svg"
+                                alt="Reversed lockup"
+                                style="width: 100%; max-width: 380px"
+                            />
+                        </div>
+                        <p class="caption">
+                            <strong>Reversed lockup</strong> ·
+                            <code>crms-logo-reversed.svg</code>. For Ink and
+                            Crest Blue backgrounds (sign-in panel, sidebar).
+                        </p>
+                    </div>
+                    <div>
+                        <div class="tile">
+                            <img
+                                src="../../public/brand/crms-mark.svg"
+                                alt="Full mark"
+                                width="150"
+                            />
+                        </div>
+                        <p class="caption">
+                            <strong>Full mark</strong> ·
+                            <code>crms-mark.svg</code>. Keyline and laurel; use
+                            at 32&nbsp;px and above.
+                        </p>
+                    </div>
+                    <div>
+                        <div class="tile">
+                            <img
+                                src="../../public/favicon.svg"
+                                alt="Compact mark"
+                                width="150"
+                            />
+                        </div>
+                        <p class="caption">
+                            <strong>Compact mark</strong> ·
+                            <code>favicon.svg</code>. No keyline or laurel,
+                            heavier crown; for 16–31&nbsp;px (favicons, app bar,
+                            avatars).
+                        </p>
+                    </div>
+                    <div>
+                        <div class="tile" style="color: var(--crest-900)">
+                            <img
+                                src="../../public/brand/crms-mark-mono.svg"
+                                alt="Monochrome mark"
+                                width="150"
+                            />
+                        </div>
+                        <p class="caption">
+                            <strong>Monochrome</strong> ·
+                            <code>crms-mark-mono.svg</code>. One colour, for
+                            stamps, fax/photocopy, embossing and print
+                            watermarks.
+                        </p>
+                    </div>
+                    <div>
+                        <div class="tile crest">
+                            <img
+                                src="../../public/brand/crms-mark.svg"
+                                alt="Mark on Crest Blue"
+                                width="150"
+                            />
+                        </div>
+                        <p class="caption">
+                            <strong>On Crest Blue</strong>. The gold keyline
+                            separates the shield from same-colour backgrounds;
+                            no extra outline is needed.
+                        </p>
+                    </div>
+                </div>
+
+                <h3>Clear space and minimum size</h3>
+                <div class="g2 grid" style="align-items: center">
+                    <div>
+                        <span class="clearspace"
+                            ><img src="../../public/brand/crms-mark.svg" alt=""
+                        /></span>
+                        <p class="caption">
+                            Keep clear space equal to
+                            <strong>¼ of the mark's height</strong> (the crane
+                            head's width) on all sides. Nothing — text, edges,
+                            other logos — enters the hatched zone.
+                        </p>
+                    </div>
+                    <div class="sizes">
+                        <figure>
+                            <img
+                                src="../../public/brand/crms-mark.svg"
+                                width="48"
+                                alt=""
+                            />
+                            <figcaption>Full · 48px</figcaption>
+                        </figure>
+                        <figure>
+                            <img
+                                src="../../public/brand/crms-mark.svg"
+                                width="32"
+                                alt=""
+                            />
+                            <figcaption>Full · 32px min</figcaption>
+                        </figure>
+                        <figure>
+                            <img
+                                src="../../public/favicon.svg"
+                                width="24"
+                                alt=""
+                            />
+                            <figcaption>Compact · 24px</figcaption>
+                        </figure>
+                        <figure>
+                            <img
+                                src="../../public/favicon.svg"
+                                width="16"
+                                alt=""
+                            />
+                            <figcaption>Compact · 16px min</figcaption>
+                        </figure>
+                        <figure>
+                            <img
+                                src="../../public/brand/crms-logo.svg"
+                                width="180"
+                                alt=""
+                            />
+                            <figcaption>Lockup · 180px min</figcaption>
+                        </figure>
+                    </div>
+                </div>
+
+                <h3>Misuse</h3>
+                <div class="g2 grid">
+                    <div class="do">
+                        <h4>Do</h4>
+                        <ul>
+                            <li>
+                                Use the reversed lockup on navy, the primary
+                                lockup on white or Surface.
+                            </li>
+                            <li>
+                                Switch to the compact mark below 32&nbsp;px.
+                            </li>
+                            <li>
+                                Pair the mark with the force name only through
+                                the official lockup.
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="dont">
+                        <h4>Don't</h4>
+                        <ul>
+                            <li>
+                                Recolour, add gradients, shadows, outlines or
+                                rotate the mark.
+                            </li>
+                            <li>
+                                Place the full-colour mark on photographs or
+                                busy patterns.
+                            </li>
+                            <li>
+                                Combine the CRMS mark with the official force
+                                emblem in one lockup.
+                            </li>
+                            <li>
+                                Use red anywhere else in the mark or as a
+                                background behind it.
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 03 Colour -->
+        <section id="colour">
+            <div class="wrap">
+                <h2><span class="num">03</span>Colour</h2>
+                <p class="lead">
+                    A disciplined palette: Crest Blue carries the brand, Crane
+                    Gold marks honour and focus, and Signal Red is kept for
+                    danger only. Roughly
+                    <strong>60% neutrals · 30% blue · 10% gold</strong>, with
+                    red under 1%.
+                </p>
+
+                <div
+                    class="g4 grid"
+                    style="margin-top: 24px"
+                    id="core-swatches"
+                ></div>
+
+                <h3>Crest Blue ramp</h3>
+                <div class="ramp" id="ramp"></div>
+                <p class="caption">
+                    Tailwind tokens <code>crest-50 … crest-950</code>. Element
+                    Plus tints (<code>--el-color-primary-light-3 … 9</code>,
+                    <code>dark-2</code>) are mixed from
+                    <code>crest-600</code> with white/black, so components
+                    always stay on-brand.
+                </p>
+
+                <h3>Semantic colours</h3>
+                <div class="g4 grid" id="semantic-swatches"></div>
+
+                <div class="g2 grid" style="margin-top: 24px">
+                    <div class="do">
+                        <h4>Do</h4>
+                        <ul>
+                            <li>
+                                Use <b>Signal Red</b> only for errors,
+                                destructive actions and security alerts.
+                            </li>
+                            <li>
+                                Use <b>Gold</b> for focus rings, active-nav
+                                indicators and the motto: small, deliberate
+                                accents.
+                            </li>
+                            <li>
+                                Pair every status colour with an icon or text
+                                label, never colour alone.
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="dont">
+                        <h4>Don't</h4>
+                        <ul>
+                            <li>
+                                Colour people or person records red/green by
+                                their role in a case (suspect, victim). Roles
+                                are neutral tags.
+                            </li>
+                            <li>
+                                Use Gold for body text on white (2.4:1 fails);
+                                use <code>gold-700</code> instead.
+                            </li>
+                            <li>
+                                Introduce new hues for modules. Differentiate
+                                with icons and labels.
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 04 Typography -->
+        <section id="type">
+            <div class="wrap">
+                <h2><span class="num">04</span>Typography</h2>
+                <p class="lead">
+                    <b>Inter</b> for all interface text: neutral, highly legible
+                    at small sizes, with excellent number shapes.
+                    <b>JetBrains Mono</b> for anything an officer must read back
+                    or compare character by character: case references, force
+                    numbers, IP addresses, codes. Both are self-hosted at build
+                    time (no third-party font requests).
+                </p>
+
+                <div class="card" style="margin-top: 24px">
+                    <div class="type-row">
+                        <div class="spec">Display · 36/1.15 · 700</div>
+                        <div
+                            style="
+                                font-size: 36px;
+                                font-weight: 700;
+                                line-height: 1.15;
+                                color: var(--crest-900);
+                            "
+                        >
+                            Accurate records.
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">H1 · 24/1.3 · 700</div>
+                        <div
+                            style="
+                                font-size: 24px;
+                                font-weight: 700;
+                                color: var(--crest-900);
+                            "
+                        >
+                            Account security
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">H2 · 16/1.4 · 700</div>
+                        <div
+                            style="
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: var(--crest-900);
+                            "
+                        >
+                            Active sessions
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">Body · 14/1.6 · 400</div>
+                        <div style="font-size: 14px">
+                            Changing your password signs out your other
+                            sessions.
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">Label · 14 · 600</div>
+                        <div
+                            style="
+                                font-size: 14px;
+                                font-weight: 600;
+                                color: var(--ink);
+                            "
+                        >
+                            Email address
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">Caption · 12/1.5 · 400</div>
+                        <div style="font-size: 12px; color: var(--muted)">
+                            Profile details are managed by your administrator.
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">Overline · 11 · 600 · +0.16em</div>
+                        <div
+                            style="
+                                font-size: 11px;
+                                font-weight: 600;
+                                letter-spacing: 0.16em;
+                                text-transform: uppercase;
+                                color: var(--gold-700);
+                            "
+                        >
+                            Uganda Police Force
+                        </div>
+                    </div>
+                    <div class="type-row">
+                        <div class="spec">Mono · 13 · tabular</div>
+                        <div
+                            class="mono"
+                            style="font-size: 13px; color: var(--crest-900)"
+                        >
+                            CRB 1234/2026 · DEMO-000001 · 10.20.30.40
+                        </div>
+                    </div>
+                </div>
+                <p class="caption">
+                    Class <code>.crms-code</code> applies the mono stack with
+                    tabular figures. Never set identifiers in the sans face.
+                </p>
+            </div>
+        </section>
+
+        <!-- 05 Interface -->
+        <section id="ui">
+            <div class="wrap">
+                <h2><span class="num">05</span>Interface system</h2>
+                <p class="lead">
+                    The UI is built with <b>Element Plus</b>, themed through CSS
+                    variables in <code>resources/css/app.css</code>, with
+                    Tailwind for layout. Element Plus is loaded in its own
+                    cascade layer (above preflight, below utilities), so
+                    Tailwind classes can adjust components and brand tokens
+                    override both.
+                </p>
+
+                <div class="g3 grid" style="margin-top: 24px">
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Spacing</b>
+                        <p class="caption">
+                            4&nbsp;px base grid. Card padding 20&nbsp;px;
+                            section gap 24&nbsp;px; page gutter 16&nbsp;px
+                            (mobile) to 32&nbsp;px.
+                        </p>
+                    </div>
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Shape</b>
+                        <p class="caption">
+                            Radius 6&nbsp;px controls · 10&nbsp;px cards ·
+                            16&nbsp;px hero panels. Shadows only for floating
+                            layers (dialogs, menus).
+                        </p>
+                    </div>
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Sizes</b>
+                        <p class="caption">
+                            Controls 36&nbsp;px default, 44&nbsp;px
+                            <code>large</code> on sign-in forms (touch target ≥
+                            44&nbsp;px).
+                        </p>
+                    </div>
+                </div>
+
+                <h3>Components</h3>
+                <div
+                    class="card"
+                    style="
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 12px;
+                        align-items: center;
+                    "
+                >
+                    <span class="btn primary">Primary action</span
+                    ><span class="btn default">Secondary</span
+                    ><span class="btn danger">Destructive</span>
+                    <span
+                        class="tag"
+                        style="background: #e9f2ed; color: var(--success)"
+                        >Active</span
+                    >
+                    <span
+                        class="tag"
+                        style="
+                            background: var(--crest-100);
+                            color: var(--crest-700);
+                        "
+                        >Required</span
+                    >
+                    <span
+                        class="tag"
+                        style="background: #f6f0e6; color: var(--warning)"
+                        >Regenerate soon</span
+                    >
+                    <span
+                        class="tag"
+                        style="background: #eff0f2; color: var(--info)"
+                        >Soon</span
+                    >
+                </div>
+                <table style="margin-top: 16px">
+                    <thead>
+                        <tr>
+                            <th>Pattern</th>
+                            <th>Rule</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>One primary per view</td>
+                            <td>
+                                Each form or card has at most one Crest Blue
+                                button. Destructive actions use
+                                <code>type="danger" plain</code> and always
+                                confirm through <code>ElMessageBox</code>.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Accountability banner</td>
+                            <td>
+                                The app shell always shows "Authorised use only
+                                · Activity is recorded and audited". Sign-in
+                                pages carry the full notice.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Errors</td>
+                            <td>
+                                Server validation is shown on the field (<code
+                                    >ElFormItem :error</code
+                                >). Toasts (<code>ElMessage</code>) only confirm
+                                completed actions.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Sensitive values</td>
+                            <td>
+                                Identifiers are masked by default
+                                (<code>CM***********89</code>). Full values are
+                                never sent to the browser unless the officer is
+                                authorised and the reveal is audited.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Idle timeout</td>
+                            <td>
+                                A gold timer dialog warns 60&nbsp;s before an
+                                idle sign-out, offering "Stay signed in" and
+                                "Sign out now".
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Upcoming modules</td>
+                            <td>
+                                Shown disabled with a neutral "Soon" tag, never
+                                as broken links.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 06 Voice -->
+        <section id="voice">
+            <div class="wrap">
+                <h2><span class="num">06</span>Voice &amp; content</h2>
+                <p class="lead">
+                    Write like a calm, competent senior officer: direct,
+                    respectful and precise. Officers read CRMS at busy front
+                    desks on shared terminals.
+                </p>
+                <div class="g2 grid" style="margin-top: 20px">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Write</th>
+                                <th>Not</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Sign in</td>
+                                <td>Login / Log on</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    Your session ended because your account is
+                                    no longer active.
+                                </td>
+                                <td>Error 403: Unauthorised user</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    Person linked as <em>suspect</em> in CRB
+                                    1234/2026
+                                </td>
+                                <td>Criminal / offender</td>
+                            </tr>
+                            <tr>
+                                <td>Verified conviction · Court ref …</td>
+                                <td>Guilty (without a verified source)</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    If that email belongs to an account, a link
+                                    is on its way.
+                                </td>
+                                <td>No account found for that email</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="card">
+                        <b style="color: var(--crest-900)">Principles</b>
+                        <ul
+                            style="
+                                font-size: 14px;
+                                padding-left: 18px;
+                                margin: 8px 0 0;
+                            "
+                        >
+                            <li>
+                                Sentence case everywhere; no ALL CAPS except
+                                overlines.
+                            </li>
+                            <li>Lead with the outcome, then the next step.</li>
+                            <li>
+                                Never reveal whether an account exists to
+                                someone not signed in.
+                            </li>
+                            <li>
+                                Notifications (email/SMS) stay generic: no
+                                names, NINs, allegations or case details.
+                            </li>
+                            <li>
+                                British English spelling (organisation,
+                                authorise), en-GB dates:
+                                <span class="mono">2 Nov 2026, 14:05</span>.
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 07 Benchmarks -->
+        <section id="benchmarks">
+            <div class="wrap">
+                <h2><span class="num">07</span>Quality benchmarks</h2>
+                <p class="lead">
+                    Measurable standards every screen must meet before release.
+                    Contrast ratios below are calculated live in this page from
+                    the token values (WCAG 2.x relative luminance).
+                </p>
+
+                <h3>Colour contrast</h3>
+                <table id="contrast">
+                    <thead>
+                        <tr>
+                            <th>Foreground</th>
+                            <th>Background</th>
+                            <th>Sample</th>
+                            <th>Ratio</th>
+                            <th>Result</th>
+                            <th>Approved use</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <p class="caption">
+                    AA requires 4.5:1 for normal text and 3:1 for large text (≥
+                    18.66&nbsp;px bold) and UI graphics. The one fail is listed
+                    on purpose: gold on white is for decoration only, never
+                    text.
+                </p>
+
+                <h3>Accessibility</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Benchmark</th>
+                            <th>Target</th>
+                            <th>How it is met</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Standard</td>
+                            <td>WCAG 2.2 AA</td>
+                            <td>
+                                Token palette above; semantic HTML; Element Plus
+                                ARIA patterns.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Focus visibility</td>
+                            <td>Always visible, ≥ 3:1</td>
+                            <td>
+                                2&nbsp;px Crane Gold
+                                <code>:focus-visible</code> ring with 2&nbsp;px
+                                offset (7:1 on Ink).
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Touch targets</td>
+                            <td>≥ 44 × 44&nbsp;px</td>
+                            <td>
+                                Large controls on sign-in; 40&nbsp;px icon
+                                buttons in the shell.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Motion</td>
+                            <td>Respect reduced motion</td>
+                            <td>
+                                <code>prefers-reduced-motion</code> disables
+                                transitions.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Responsive</td>
+                            <td>
+                                360&nbsp;px → 1920&nbsp;px, no horizontal scroll
+                            </td>
+                            <td>
+                                Sidebar becomes a drawer below 1024&nbsp;px;
+                                brand panel hides below 1024&nbsp;px.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Status messages</td>
+                            <td>Announced to screen readers</td>
+                            <td>
+                                <code>aria-live</code> on the password checklist
+                                and idle timer.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Performance budgets</h3>
+                <p class="caption" style="margin-top: 0">
+                    Measured from <code>npm run build</code> (gzip), November
+                    2026. Station links may be slow, so Element Plus is imported
+                    per page rather than registered globally.
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Asset</th>
+                            <th>Measured</th>
+                            <th>Budget</th>
+                            <th style="width: 30%">Use of budget</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                Shared runtime (Vue, Inertia, Element Plus core)
+                            </td>
+                            <td class="mono">125.6 KB</td>
+                            <td class="mono">150 KB</td>
+                            <td>
+                                <div class="bar">
+                                    <span style="width: 84%"></span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Stylesheet (Tailwind + Element Plus + tokens)
+                            </td>
+                            <td class="mono">57.3 KB</td>
+                            <td class="mono">70 KB</td>
+                            <td>
+                                <div class="bar">
+                                    <span style="width: 82%"></span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Sign-in page chunk</td>
+                            <td class="mono">1.1 KB</td>
+                            <td class="mono">20 KB</td>
+                            <td>
+                                <div class="bar">
+                                    <span style="width: 6%"></span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Account security page chunk (tables, dialogs)
+                            </td>
+                            <td class="mono">36.3 KB</td>
+                            <td class="mono">60 KB</td>
+                            <td>
+                                <div class="bar">
+                                    <span style="width: 60%"></span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Favicon set (ICO 16/32/48 + SVG)</td>
+                            <td class="mono">4.5 KB</td>
+                            <td class="mono">10 KB</td>
+                            <td>
+                                <div class="bar">
+                                    <span style="width: 45%"></span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Security UX benchmarks</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Control</th>
+                            <th>Default</th>
+                            <th>Config</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Multi-factor authentication</td>
+                            <td>Required for every officer</td>
+                            <td><code>CRMS_REQUIRE_MFA</code></td>
+                        </tr>
+                        <tr>
+                            <td>Idle sign-out / warning</td>
+                            <td>15 min / 60 s</td>
+                            <td>
+                                <code>CRMS_IDLE_TIMEOUT</code>,
+                                <code>CRMS_IDLE_WARNING</code>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Absolute session lifetime</td>
+                            <td>12 hours</td>
+                            <td><code>CRMS_SESSION_ABSOLUTE_LIFETIME</code></td>
+                        </tr>
+                        <tr>
+                            <td>Password policy</td>
+                            <td>
+                                ≥ 12 chars, mixed case, number, symbol;
+                                breached-password check in production
+                            </td>
+                            <td><code>AppServiceProvider</code></td>
+                        </tr>
+                        <tr>
+                            <td>Re-authentication for sensitive settings</td>
+                            <td>Every 15 min</td>
+                            <td><code>AUTH_PASSWORD_TIMEOUT</code></td>
+                        </tr>
+                        <tr>
+                            <td>Sign-in throttling</td>
+                            <td>
+                                5 attempts / min per email + network address
+                            </td>
+                            <td>Fortify pipeline</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="caption">
+                    Final values must be approved by the institution's security
+                    team (developer guide §2.2).
+                </p>
+            </div>
+        </section>
+
+        <!-- 08 Assets -->
+        <section id="assets">
+            <div class="wrap">
+                <h2><span class="num">08</span>Asset inventory</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Purpose</th>
+                            <th>Size</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="mono">public/brand/crms-logo.svg</td>
+                            <td>Primary horizontal lockup</td>
+                            <td>372 × 72</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">
+                                public/brand/crms-logo-reversed.svg
+                            </td>
+                            <td>Lockup for dark backgrounds</td>
+                            <td>372 × 72</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">public/brand/crms-mark.svg</td>
+                            <td>Full Crane Shield mark</td>
+                            <td>64 × 64 vector</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">
+                                public/brand/crms-mark-mono.svg
+                            </td>
+                            <td>
+                                Single-colour mark (uses
+                                <code>currentColor</code>)
+                            </td>
+                            <td>64 × 64 vector</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">public/favicon.svg</td>
+                            <td>Compact mark, modern browsers</td>
+                            <td>vector</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">public/favicon.ico</td>
+                            <td>Legacy favicon</td>
+                            <td>16, 32, 48 px</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">public/apple-touch-icon.png</td>
+                            <td>iOS home screen</td>
+                            <td>180 px</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">
+                                public/brand/icon-192.png · icon-512.png
+                            </td>
+                            <td>Web app manifest icons</td>
+                            <td>192 / 512 px</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">
+                                resources/js/components/AppLogoMark.vue
+                            </td>
+                            <td>
+                                Inline mark
+                                (<code>variant="full|compact"</code>)
+                            </td>
+                            <td>—</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">
+                                resources/js/components/AppLogo.vue
+                            </td>
+                            <td>
+                                Lockup component (<code>reversed</code>,
+                                <code>size</code>, <code>show-descriptor</code>)
+                            </td>
+                            <td>—</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer>
+            <div class="wrap">
+                CRMS brand &amp; design system · Restricted · For use by the
+                CRMS project team and approved partners only. The official
+                Uganda Police Force emblem remains governed by the Force's own
+                regulations.
+            </div>
+        </footer>
+
+        <script>
+            const core = [
+                {
+                    name: 'Crest Blue',
+                    token: 'crest-600',
+                    hex: '#1D3C8F',
+                    fg: '#fff',
+                    use: 'Primary actions, links, brand surfaces',
+                },
+                {
+                    name: 'Ink',
+                    token: 'crest-900',
+                    hex: '#0B1B45',
+                    fg: '#fff',
+                    use: 'Sidebar, brand panel, headings',
+                },
+                {
+                    name: 'Crane Gold',
+                    token: 'gold-500',
+                    hex: '#D4A017',
+                    fg: '#0B1B45',
+                    use: 'Focus ring, active indicator, motto',
+                },
+                {
+                    name: 'Signal Red',
+                    token: 'signal-500',
+                    hex: '#C8102E',
+                    fg: '#fff',
+                    use: 'Danger and destructive actions only',
+                },
+                {
+                    name: 'Surface',
+                    token: 'surface',
+                    hex: '#F5F7FB',
+                    fg: '#0F172A',
+                    use: 'Page background',
+                },
+                {
+                    name: 'Card',
+                    token: 'white',
+                    hex: '#FFFFFF',
+                    fg: '#0F172A',
+                    use: 'Cards, forms, tables',
+                },
+                {
+                    name: 'Text',
+                    token: 'slate-900',
+                    hex: '#0F172A',
+                    fg: '#fff',
+                    use: 'Primary text',
+                },
+                {
+                    name: 'Gold 700',
+                    token: 'gold-700',
+                    hex: '#8A6500',
+                    fg: '#fff',
+                    use: 'Gold text on light backgrounds',
+                },
+            ];
+            const semantic = [
+                {
+                    name: 'Success',
+                    token: '--el-color-success',
+                    hex: '#1F7A4D',
+                    fg: '#fff',
+                    use: 'Completed, active, verified',
+                },
+                {
+                    name: 'Warning',
+                    token: '--el-color-warning',
+                    hex: '#A86400',
+                    fg: '#fff',
+                    use: 'Needs attention soon',
+                },
+                {
+                    name: 'Danger',
+                    token: '--el-color-danger',
+                    hex: '#C8102E',
+                    fg: '#fff',
+                    use: 'Failed, blocked, destructive',
+                },
+                {
+                    name: 'Info',
+                    token: '--el-color-info',
+                    hex: '#5B6578',
+                    fg: '#fff',
+                    use: 'Neutral status, upcoming',
+                },
+            ];
+            const ramp = [
+                '#F3F5FA',
+                '#E8ECF4',
+                '#D2D8E9',
+                '#BBC5DD',
+                '#8E9EC7',
+                '#6177B1',
+                '#1D3C8F',
+                '#173072',
+                '#12275C',
+                '#0B1B45',
+                '#07112D',
+            ];
+            const steps = [
+                50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950,
+            ];
+
+            const rgb = (h) =>
+                [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+            const lum = (h) => {
+                const [r, g, b] = rgb(h).map((v) => {
+                    v /= 255;
+                    return v <= 0.03928
+                        ? v / 12.92
+                        : ((v + 0.055) / 1.055) ** 2.4;
+                });
+                return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            };
+            const ratio = (a, b) => {
+                const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+                return (x + 0.05) / (y + 0.05);
+            };
+
+            const swatch = (c) =>
+                `<div class="swatch"><div class="chip" style="background:${c.hex};color:${c.fg};${c.hex === '#FFFFFF' || c.hex === '#F5F7FB' ? 'border-bottom:1px solid var(--line)' : ''}">${c.name}</div><div class="info"><b>${c.hex}</b><span class="mono">rgb(${rgb(c.hex).join(', ')}) · ${c.token}</span><div>${c.use}</div></div></div>`;
+            document.getElementById('core-swatches').innerHTML = core
+                .map(swatch)
+                .join('');
+            document.getElementById('semantic-swatches').innerHTML = semantic
+                .map(swatch)
+                .join('');
+            document.getElementById('ramp').innerHTML = ramp
+                .map(
+                    (h, i) =>
+                        `<div style="background:${h};color:${i < 5 ? '#0B1B45' : '#fff'}">${steps[i]}</div>`,
+                )
+                .join('');
+
+            const pairs = [
+                [
+                    '#FFFFFF',
+                    '#1D3C8F',
+                    'White on Crest Blue',
+                    'Primary buttons, hero text',
+                ],
+                [
+                    '#FFFFFF',
+                    '#0B1B45',
+                    'White on Ink',
+                    'Sidebar active item, brand panel',
+                ],
+                [
+                    '#C9D2EA',
+                    '#0B1B45',
+                    'Crest 200 on Ink',
+                    'Sidebar navigation text',
+                ],
+                [
+                    '#D4A017',
+                    '#0B1B45',
+                    'Gold on Ink',
+                    'Motto, focus ring, active marker',
+                ],
+                [
+                    '#D4A017',
+                    '#1D3C8F',
+                    'Gold on Crest Blue',
+                    'Mark keyline and crown (graphic)',
+                ],
+                [
+                    '#1D3C8F',
+                    '#FFFFFF',
+                    'Crest Blue on white',
+                    'Links, headings',
+                ],
+                ['#0F172A', '#FFFFFF', 'Text on white', 'Body copy'],
+                ['#475569', '#FFFFFF', 'Slate 600 on white', 'Secondary copy'],
+                [
+                    '#64748B',
+                    '#FFFFFF',
+                    'Slate 500 on white',
+                    'Captions on cards only',
+                ],
+                [
+                    '#64748B',
+                    '#F5F7FB',
+                    'Slate 500 on Surface',
+                    'Avoid; use Slate 600 on Surface',
+                ],
+                [
+                    '#8A6500',
+                    '#FFFFFF',
+                    'Gold 700 on white',
+                    'Overlines, warning text',
+                ],
+                [
+                    '#C8102E',
+                    '#FFFFFF',
+                    'Signal Red on white',
+                    'Error messages, danger buttons',
+                ],
+                [
+                    '#1F7A4D',
+                    '#FFFFFF',
+                    'Success on white',
+                    'Success text and icons',
+                ],
+                [
+                    '#A86400',
+                    '#FFFFFF',
+                    'Warning on white',
+                    'Warning text and icons',
+                ],
+                [
+                    '#D4A017',
+                    '#FFFFFF',
+                    'Gold on white',
+                    'Decoration only, never text',
+                ],
+            ];
+            document.querySelector('#contrast tbody').innerHTML = pairs
+                .map(([fg, bg, label, use]) => {
+                    const r = ratio(fg, bg);
+                    const [cls, text] =
+                        r >= 7
+                            ? ['aaa', 'AAA']
+                            : r >= 4.5
+                              ? ['pass', 'AA']
+                              : r >= 3
+                                ? ['large', 'AA large / UI']
+                                : ['fail', 'Fail'];
+                    return `<tr><td>${label.split(' on ')[0]}<br><span class="mono">${fg}</span></td><td>${label.split(' on ')[1]}<br><span class="mono">${bg}</span></td><td><span class="sample" style="color:${fg};background:${bg};border:1px solid var(--line)">Aa</span></td><td class="mono">${r.toFixed(2)}:1</td><td><span class="pill ${cls}">${text}</span></td><td>${use}</td></tr>`;
+                })
+                .join('');
+        </script>
+    </body>
+</html>

@@ -1,11 +1,200 @@
+/*
+| Element Plus sits in its own cascade layer: above Tailwind's preflight so
+| components keep their look, below utilities so classes like text-emerald-600
+| can still adjust a component. Unlayered rules below (brand tokens) win over both.
+*/
+@layer theme, base, element-plus, components, utilities;
 @import 'tailwindcss';
+@import 'element-plus/dist/index.css' layer(element-plus);
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
-@theme inline {
+/*
+|--------------------------------------------------------------------------
+| CRMS brand tokens
+|--------------------------------------------------------------------------
+|
+| Derived from the Uganda Police crest: Crest Blue (protection, authority),
+| Crane Gold (the crowned crane's crest, honour) and Signal Red (the crane's
+| wattle; reserved for danger and destructive actions). See docs/brand.
+|
+*/
+
+@theme {
     --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
+        Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-mono:
+        'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+    --color-crest-50: #f3f5fa;
+    --color-crest-100: #e8ecf4;
+    --color-crest-200: #d2d8e9;
+    --color-crest-300: #bbc5dd;
+    --color-crest-400: #8e9ec7;
+    --color-crest-500: #6177b1;
+    --color-crest-600: #1d3c8f;
+    --color-crest-700: #173072;
+    --color-crest-800: #12275c;
+    --color-crest-900: #0b1b45;
+    --color-crest-950: #07112d;
+
+    --color-gold-100: #faf1d6;
+    --color-gold-300: #ecca6b;
+    --color-gold-500: #d4a017;
+    --color-gold-700: #8a6500;
+
+    --color-signal-500: #c8102e;
+    --color-signal-700: #a00d25;
+
+    --color-surface: #f5f7fb;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Element Plus theme
+|--------------------------------------------------------------------------
+|
+| Element Plus reads its palette from CSS variables. Each colour needs the
+| full light/dark scale or components fall back to the default blue.
+|
+*/
+
+:root {
+    --el-color-primary: #1d3c8f;
+    --el-color-primary-light-3: #6177b1;
+    --el-color-primary-light-5: #8e9ec7;
+    --el-color-primary-light-7: #bbc5dd;
+    --el-color-primary-light-8: #d2d8e9;
+    --el-color-primary-light-9: #e8ecf4;
+    --el-color-primary-dark-2: #173072;
+
+    --el-color-success: #1f7a4d;
+    --el-color-success-light-3: #62a282;
+    --el-color-success-light-5: #8fbda6;
+    --el-color-success-light-7: #bcd7ca;
+    --el-color-success-light-8: #d2e4db;
+    --el-color-success-light-9: #e9f2ed;
+    --el-color-success-dark-2: #19623e;
+
+    --el-color-warning: #a86400;
+    --el-color-warning-light-3: #c2934d;
+    --el-color-warning-light-5: #d4b280;
+    --el-color-warning-light-7: #e5d1b3;
+    --el-color-warning-light-8: #eee0cc;
+    --el-color-warning-light-9: #f6f0e6;
+    --el-color-warning-dark-2: #865000;
+
+    --el-color-danger: #c8102e;
+    --el-color-danger-light-3: #d9586d;
+    --el-color-danger-light-5: #e48897;
+    --el-color-danger-light-7: #efb7c0;
+    --el-color-danger-light-8: #f4cfd5;
+    --el-color-danger-light-9: #fae7ea;
+    --el-color-danger-dark-2: #a00d25;
+
+    --el-color-error: #c8102e;
+    --el-color-error-light-3: #d9586d;
+    --el-color-error-light-5: #e48897;
+    --el-color-error-light-7: #efb7c0;
+    --el-color-error-light-8: #f4cfd5;
+    --el-color-error-light-9: #fae7ea;
+    --el-color-error-dark-2: #a00d25;
+
+    --el-color-info: #5b6578;
+    --el-color-info-light-3: #8c93a1;
+    --el-color-info-light-5: #adb2bc;
+    --el-color-info-light-7: #ced1d7;
+    --el-color-info-light-8: #dee0e4;
+    --el-color-info-light-9: #eff0f2;
+    --el-color-info-dark-2: #495160;
+
+    --el-text-color-primary: #0f172a;
+    --el-text-color-regular: #334155;
+    --el-text-color-secondary: #64748b;
+    --el-border-color: #d6dbe5;
+    --el-border-color-light: #e2e6ee;
+    --el-border-color-lighter: #ebeef4;
+    --el-bg-color-page: #f5f7fb;
+
+    --el-font-family: var(--font-sans);
+    --el-border-radius-base: 6px;
+    --el-border-radius-small: 4px;
+    --el-border-radius-round: 20px;
+    --el-component-size-large: 44px;
+    --el-component-size: 36px;
+}
+
+@layer base {
+    html,
+    body {
+        @apply bg-surface text-slate-900;
+    }
+
+    body {
+        font-feature-settings: 'cv11', 'ss01';
+    }
+
+    ::selection {
+        @apply bg-crest-200 text-crest-900;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-gold-500);
+        outline-offset: 2px;
+    }
+}
+
+@layer components {
+    /* Case references, identifiers, codes: always monospaced and tabular. */
+    .crms-code {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+    }
+
+    /* Subtle guilloche-style backdrop used on the authentication brand panel. */
+    .crms-pattern {
+        background-color: var(--color-crest-900);
+        background-image:
+            radial-gradient(
+                circle at 20% 20%,
+                rgb(29 60 143 / 0.55),
+                transparent 55%
+            ),
+            radial-gradient(
+                circle at 85% 90%,
+                rgb(212 160 23 / 0.14),
+                transparent 45%
+            ),
+            repeating-radial-gradient(
+                circle at 0 100%,
+                rgb(255 255 255 / 0.035) 0 1px,
+                transparent 1px 22px
+            );
+    }
+}
+
+/* Element Plus refinements. */
+.el-button {
+    font-weight: 600;
+}
+
+.el-form-item__label {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+}
+
+.el-card {
+    --el-card-border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
 }

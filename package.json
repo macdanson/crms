@@ -11,12 +11,14 @@
         "types:check": "vue-tsc --noEmit"
     },
     "dependencies": {
+        "@element-plus/icons-vue": "^2.3.2",
         "@inertiajs/vite": "^3.0.0",
         "@inertiajs/vue3": "^3.0.0",
         "@tailwindcss/vite": "^4.1.11",
         "@vitejs/plugin-vue": "^6.0.0",
         "clsx": "^2.1.1",
         "concurrently": "^10.0.3",
+        "element-plus": "^2.14.7",
         "laravel-vite-plugin": "^3.1",
         "tailwind-merge": "^3.2.0",
         "tailwindcss": "^4.1.1",

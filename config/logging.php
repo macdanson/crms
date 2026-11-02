@@ -65,6 +65,16 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Security & business audit stream. In production, ship this file (or
+        // replace this channel) to the protected central audit platform / SIEM.
+        'audit' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/audit.log'),
+            'level' => 'info',
+            'days' => env('LOG_AUDIT_DAYS', 90),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
