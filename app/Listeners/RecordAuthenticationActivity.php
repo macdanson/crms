@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\NewDeviceSignIn;
 use App\Services\AuditLogger;
 use App\Services\BrowserSessions;
+use App\Services\SessionTermination;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
@@ -40,6 +41,11 @@ class RecordAuthenticationActivity
      */
     private const RECOGNISED_DEVICE_DAYS = 90;
 
+    /**
+     * Session key holding the sign-in before the current one.
+     */
+    public const PREVIOUS_LOGIN = 'crms.previous_login';
+
     public function __construct(
         private AuditLogger $audit,
         private BrowserSessions $sessions,
@@ -61,6 +67,12 @@ class RecordAuthenticationActivity
             $request->session()->put([
                 'crms.authenticated_at' => $now,
                 'crms.last_activity_at' => $now,
+                // Read before last_login_* is overwritten below, so pages can
+                // show the sign-in before this one, not this one.
+                self::PREVIOUS_LOGIN => [
+                    'at' => $user->last_login_at?->toIso8601String(),
+                    'ip' => $user->last_login_ip,
+                ],
             ]);
 
             // The user has just proven their password; avoid asking again
@@ -107,6 +119,10 @@ class RecordAuthenticationActivity
 
     public function handleLogout(Logout $event): void
     {
+        if (SessionTermination::isTerminating(request())) {
+            return;
+        }
+
         $this->audit->record('auth.logout', AuditOutcome::Success, $event->user instanceof User ? $event->user : null);
     }
 
@@ -198,11 +214,24 @@ class RecordAuthenticationActivity
             return;
         }
 
-        if ($previousLogins->where('user_agent', Str::limit($userAgent, 509))->exists()) {
+        // Browsers change their user agent on every update, so compare the
+        // browser and platform rather than the exact string.
+        $agent = $this->sessions->describeAgent($userAgent);
+
+        $recognised = $previousLogins
+            ->whereNotNull('user_agent')
+            ->distinct()
+            ->limit(200)
+            ->pluck('user_agent')
+            ->contains(function (string $previousAgent) use ($agent): bool {
+                $previous = $this->sessions->describeAgent($previousAgent);
+
+                return $previous['browser'] === $agent['browser'] && $previous['platform'] === $agent['platform'];
+            });
+
+        if ($recognised) {
             return;
         }
-
-        $agent = $this->sessions->describeAgent($userAgent);
 
         $user->notify(new NewDeviceSignIn(
             device: "{$agent['browser']} on {$agent['platform']}",

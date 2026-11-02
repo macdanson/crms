@@ -4,10 +4,9 @@ namespace App\Http\Middleware;
 
 use App\Enums\AuditOutcome;
 use App\Models\User;
-use App\Services\AuditLogger;
+use App\Services\SessionTermination;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -16,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnforceSessionTimeouts
 {
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(private SessionTermination $termination) {}
 
     /**
      * Handle an incoming request.
@@ -60,20 +59,15 @@ class EnforceSessionTimeouts
 
     private function expire(Request $request, User $user, string $reason): Response
     {
-        $this->audit->record('auth.session.expired', AuditOutcome::Success, $user, ['reason' => $reason]);
-
-        Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        $message = $reason === 'idle_timeout'
-            ? 'You were signed out after a period of inactivity.'
-            : 'Your session reached its maximum length. Please sign in again.';
-
-        if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-            return response()->json(['message' => $message], 401);
-        }
-
-        return redirect()->route('login')->with('status', $message);
+        return $this->termination->end(
+            $request,
+            $user,
+            'auth.session.expired',
+            AuditOutcome::Success,
+            ['reason' => $reason],
+            $reason === 'idle_timeout'
+                ? 'You were signed out after a period of inactivity.'
+                : 'Your session reached its maximum length. Please sign in again.',
+        );
     }
 }

@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
 
 /**
  * Replaces the user's authenticator (e.g. a new phone). The old secret is
- * discarded and the user is taken straight to re-enrolment.
+ * discarded, every other session is signed out and the user is taken
+ * straight to re-enrolment.
  */
 class TwoFactorResetController extends Controller
 {
@@ -19,7 +20,7 @@ class TwoFactorResetController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $accounts->resetTwoFactor($user, actor: $user);
+        $accounts->resetTwoFactor($user, actor: $user, keepSessionId: $request->session()->getId());
 
         return redirect()->route('two-factor.setup');
     }

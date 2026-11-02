@@ -205,3 +205,32 @@ it('does not carry remember-me into the two-factor challenge', function () {
         'remember' => '1',
     ])->assertSessionHas('login.remember', false);
 });
+
+it('shows the previous sign-in rather than the current one', function () {
+    config(['crms.auth.require_mfa' => false]);
+    $user = User::factory()->create([
+        'last_login_at' => '2026-10-30 08:00:00',
+        'last_login_ip' => '10.0.0.5',
+    ]);
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+
+    $this->get(route('dashboard'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('security.previous_login.ip', '10.0.0.5')
+            ->where('security.previous_login.at', fn (string $at) => str_starts_with($at, '2026-10-30T08:00:00')));
+});
+
+it('does not treat a browser update as a new device', function () {
+    Notification::fake();
+    $user = User::factory()->create();
+
+    $this->withHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0) Chrome/130.0')
+        ->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+    $this->post(route('logout'));
+
+    $this->withHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0) Chrome/131.0')
+        ->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+
+    Notification::assertNothingSentTo($user);
+});

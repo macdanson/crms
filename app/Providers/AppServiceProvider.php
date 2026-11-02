@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,20 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureRequestMacros();
+    }
+
+    /**
+     * Request helpers shared by middleware and the exception handler.
+     */
+    protected function configureRequestMacros(): void
+    {
+        // API routes and plain fetch/XHR clients get JSON. Inertia visits also
+        // send Accept: application/json but expect redirects and pages.
+        Request::macro('wantsJsonResponse', function (): bool {
+            /** @var Request $this */
+            return $this->is('api/*') || ($this->expectsJson() && ! $this->header('X-Inertia'));
+        });
     }
 
     /**

@@ -92,3 +92,25 @@ it('returns 401 JSON to the heartbeat of a suspended account', function () {
 
     $this->postJson(route('session.heartbeat'))->assertUnauthorized();
 });
+
+it('does not record a timed-out session as a sign-out by the user', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+    $this->get(route('dashboard'));
+
+    expect(AuditEvent::where('event', 'auth.session.expired')->exists())->toBeTrue()
+        ->and(AuditEvent::where('event', 'auth.logout')->exists())->toBeFalse();
+});
+
+it('does not record the end of a suspended user’s session as a sign-out by the user', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $user->forceFill(['status' => 'suspended'])->save();
+    $this->get(route('dashboard'));
+
+    expect(AuditEvent::where('event', 'auth.session.terminated')->exists())->toBeTrue()
+        ->and(AuditEvent::where('event', 'auth.logout')->exists())->toBeFalse();
+});

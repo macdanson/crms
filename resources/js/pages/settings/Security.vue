@@ -22,6 +22,7 @@ import {
     ElFormItem,
     ElIcon,
     ElInput,
+    ElMessage,
     ElMessageBox,
     ElTable,
     ElTableColumn,
@@ -30,6 +31,7 @@ import {
 import { ref } from 'vue';
 import PasswordStrength from '@/components/PasswordStrength.vue';
 import { formatDateTime, formatRelative } from '@/lib/utils';
+import { show as securityShow } from '@/routes/security';
 import { reset as resetTwoFactor } from '@/routes/security/two-factor';
 import {
     destroy as destroySession,
@@ -68,7 +70,7 @@ defineProps<{
         job_title: string | null;
         status: string;
         password_changed_at: string | null;
-        last_login_at: string | null;
+        previous_login: { at: string | null; ip: string | null } | null;
     };
     twoFactor: {
         enabled: boolean;
@@ -121,9 +123,28 @@ const recoveryHttp = useHttp<Record<string, never>, string[]>({});
 const recoveryDialogOpen = ref(false);
 const visibleCodes = ref<string[]>([]);
 
+/** Password confirmation has expired; the server answers JSON with 423. */
+const PASSWORD_CONFIRMATION_REQUIRED = 423;
+
 async function showRecoveryCodes(): Promise<void> {
-    visibleCodes.value = await recoveryHttp.get(recoveryCodesRoute.url());
-    recoveryDialogOpen.value = true;
+    try {
+        visibleCodes.value = await recoveryHttp.get(recoveryCodesRoute.url());
+        recoveryDialogOpen.value = true;
+    } catch (error) {
+        const status = (error as { response?: { status?: number } })?.response
+            ?.status;
+
+        if (status === PASSWORD_CONFIRMATION_REQUIRED) {
+            // Reloading this page asks for the password, then returns here.
+            router.visit(securityShow.url());
+
+            return;
+        }
+
+        ElMessage.error(
+            'Your recovery codes could not be loaded. Please try again.',
+        );
+    }
 }
 
 async function confirmRegenerateCodes(): Promise<void> {
@@ -230,9 +251,18 @@ function submitSignOutOthers(): void {
                         account.status
                     }}</ElTag>
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="Last sign-in">{{
-                    formatDateTime(account.last_login_at)
-                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="Previous sign-in">
+                    <template v-if="account.previous_login?.at">
+                        {{ formatDateTime(account.previous_login.at) }}
+                        <span v-if="account.previous_login.ip">
+                            from
+                            <span class="crms-code">{{
+                                account.previous_login.ip
+                            }}</span>
+                        </span>
+                    </template>
+                    <template v-else>None before this one</template>
+                </ElDescriptionsItem>
             </ElDescriptions>
             <p class="mt-3 text-xs text-slate-500">
                 Profile details are managed by your administrator. Report any

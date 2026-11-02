@@ -226,3 +226,31 @@ it('never returns to another site after confirming the password', function () {
     $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
         ->assertRedirect(route('dashboard'));
 });
+
+it('signs out every other session when the user replaces their authenticator', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    storeOtherSession($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'))
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeFalse();
+    $this->assertAuthenticatedAs($user);
+});
+
+it('asks for the password again once the confirmation window has passed', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $window = (int) config('auth.password_timeout');
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time() - $window + 60])
+        ->get(route('security.show'))
+        ->assertOk();
+
+    $this->withSession(['auth.password_confirmed_at' => time() - $window - 1])
+        ->get(route('security.show'))
+        ->assertRedirect(route('password.confirm'));
+});

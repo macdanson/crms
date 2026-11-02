@@ -1,6 +1,6 @@
 import { router, useHttp, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { dashboard, logout } from '@/routes';
+import { logout } from '@/routes';
 import { heartbeat } from '@/routes/session';
 
 /**
@@ -115,9 +115,15 @@ export function useIdleTimeout() {
 
         expiring = true;
         showWarning.value = false;
-        // Any authenticated request now meets the server-side timeout, which
-        // records the event and returns the user to the sign-in page.
-        router.visit(dashboard.url(), { replace: true });
+        // Reload this page. If the session has ended, the server records it
+        // and redirects to the sign-in page. If it is still alive (this tab's
+        // clock was behind), the user stays where they were and the timer
+        // starts again.
+        router.reload({
+            onFinish: () => {
+                expiring = false;
+            },
+        });
     }
 
     function tick(): void {

@@ -133,9 +133,11 @@ class AccountLifecycle
 
     /**
      * Clear the user's authenticator so they must enrol again at next
-     * sign-in (e.g. lost phone). Existing sessions are revoked.
+     * sign-in (e.g. lost phone). Every session is revoked except
+     * $keepSessionId, the session of a user replacing their own authenticator.
+     * Any other session could otherwise enrol an authenticator of its own.
      */
-    public function resetTwoFactor(User $user, ?User $actor = null): void
+    public function resetTwoFactor(User $user, ?User $actor = null, ?string $keepSessionId = null): void
     {
         $user->forceFill([
             'two_factor_secret' => null,
@@ -148,9 +150,9 @@ class AccountLifecycle
 
         TwoFactorAuthenticationDisabled::dispatch($user);
 
-        // Users replacing their own authenticator keep their current session;
-        // a reset by anyone else signs the user out everywhere.
-        $revoked = $actor?->is($user) ? 0 : $this->sessions->revokeAll($user);
+        $revoked = $keepSessionId === null
+            ? $this->sessions->revokeAll($user)
+            : $this->sessions->revokeOthers($user, $keepSessionId);
 
         $this->audit->record('mfa.reset', AuditOutcome::Success, $user, [
             'actor_id' => $actor?->getKey(),

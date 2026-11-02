@@ -33,3 +33,12 @@ it('reuses a well-formed incoming request id for tracing', function () {
         ->get(route('login'))
         ->assertHeader('X-Request-Id', 'edge-proxy-1234abcd');
 });
+
+it('keeps the session cookie on links from other sites', function () {
+    $response = $this->get(route('login'));
+
+    $sessionCookie = collect($response->headers->getCookies())
+        ->first(fn ($cookie) => $cookie->getName() === config('session.cookie'));
+
+    expect($sessionCookie?->getSameSite())->toBe('lax');
+});

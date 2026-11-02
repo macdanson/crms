@@ -4,10 +4,9 @@ namespace App\Http\Middleware;
 
 use App\Enums\AuditOutcome;
 use App\Models\User;
-use App\Services\AuditLogger;
+use App\Services\SessionTermination;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -16,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnsureAccountIsActive
 {
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(private SessionTermination $termination) {}
 
     /**
      * Handle an incoming request.
@@ -28,21 +27,14 @@ class EnsureAccountIsActive
         $user = $request->user();
 
         if ($user instanceof User && ! $user->isActive()) {
-            $this->audit->record('auth.session.terminated', AuditOutcome::Blocked, $user, [
-                'reason' => 'account_'.$user->status->value,
-            ]);
-
-            Auth::guard('web')->logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
-
-            $message = 'Your session has ended because your account is no longer active.';
-
-            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-                return response()->json(['message' => $message], 401);
-            }
-
-            return redirect()->route('login')->with('status', $message);
+            return $this->termination->end(
+                $request,
+                $user,
+                'auth.session.terminated',
+                AuditOutcome::Blocked,
+                ['reason' => 'account_'.$user->status->value],
+                'Your session has ended because your account is no longer active.',
+            );
         }
 
         return $next($request);

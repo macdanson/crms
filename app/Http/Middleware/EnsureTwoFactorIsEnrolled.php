@@ -27,7 +27,7 @@ class EnsureTwoFactorIsEnrolled
             && $user instanceof User
             && ! $user->hasEnabledTwoFactorAuthentication()
         ) {
-            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            if ($request->wantsJsonResponse()) {
                 return response()->json(['message' => 'Multi-factor authentication enrolment is required.'], 403);
             }
 

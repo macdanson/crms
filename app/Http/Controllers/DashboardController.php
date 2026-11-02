@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Listeners\RecordAuthenticationActivity;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -22,8 +23,7 @@ class DashboardController extends Controller
                 'mfa_enabled' => $user->hasEnabledTwoFactorAuthentication(),
                 'recovery_codes_remaining' => $user->hasEnabledTwoFactorAuthentication() ? count($user->recoveryCodes()) : 0,
                 'password_changed_at' => $user->password_changed_at?->toIso8601String(),
-                'last_login_at' => $user->last_login_at?->toIso8601String(),
-                'last_login_ip' => $user->last_login_ip,
+                'previous_login' => $request->session()->get(RecordAuthenticationActivity::PREVIOUS_LOGIN),
             ],
         ]);
     }

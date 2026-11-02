@@ -20,8 +20,7 @@ const props = defineProps<{
         mfa_enabled: boolean;
         recovery_codes_remaining: number;
         password_changed_at: string | null;
-        last_login_at: string | null;
-        last_login_ip: string | null;
+        previous_login: { at: string | null; ip: string | null } | null;
     };
 }>();
 
@@ -164,16 +163,22 @@ const modules = [
                         /></ElIcon>
                         <div>
                             <dt class="font-semibold text-slate-900">
-                                Last sign-in
+                                Previous sign-in
                             </dt>
-                            <dd class="text-slate-500">
-                                {{ formatDateTime(security.last_login_at) }}
-                                <span v-if="security.last_login_ip">
+                            <dd
+                                v-if="security.previous_login?.at"
+                                class="text-slate-500"
+                            >
+                                {{ formatDateTime(security.previous_login.at) }}
+                                <span v-if="security.previous_login.ip">
                                     from
                                     <span class="crms-code">{{
-                                        security.last_login_ip
+                                        security.previous_login.ip
                                     }}</span>
                                 </span>
+                            </dd>
+                            <dd v-else class="text-slate-500">
+                                None before this one
                             </dd>
                             <dd class="mt-1 text-xs text-slate-500">
                                 Password changed

@@ -4,6 +4,9 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Auth\Middleware\RequirePassword;
+use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Routing\ResponseFactory;
+use Illuminate\Contracts\Routing\UrlGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
@@ -20,6 +23,15 @@ use Symfony\Component\HttpFoundation\Response;
 class RequirePasswordConfirmation extends RequirePassword
 {
     /**
+     * The framework passes auth.password_timeout only to its own class, so
+     * read it here; otherwise the 3-hour default would apply.
+     */
+    public function __construct(ResponseFactory $responseFactory, UrlGenerator $urlGenerator, Repository $config)
+    {
+        parent::__construct($responseFactory, $urlGenerator, $config->get('auth.password_timeout'));
+    }
+
+    /**
      * Handle an incoming request.
      *
      * @param  Closure(Request): (Response)  $next
@@ -30,7 +42,7 @@ class RequirePasswordConfirmation extends RequirePassword
     {
         $timeout = $passwordTimeoutSeconds === null ? null : (int) $passwordTimeoutSeconds;
 
-        if ($request->isMethodSafe() || $request->expectsJson() || ! $this->shouldConfirmPassword($request, $timeout)) {
+        if ($request->isMethodSafe() || $request->wantsJsonResponse() || ! $this->shouldConfirmPassword($request, $timeout)) {
             return parent::handle($request, $next, $redirectToRoute, $passwordTimeoutSeconds);
         }
 

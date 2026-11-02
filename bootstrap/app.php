@@ -41,13 +41,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectUsersTo(fn () => route('dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $wantsJson = fn (Request $request): bool => $request->is('api/*')
-            || ($request->expectsJson() && ! $request->header('X-Inertia'));
+        $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => $request->wantsJsonResponse());
 
-        $exceptions->shouldRenderJsonWhen($wantsJson);
-
-        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) use ($wantsJson): Response {
-            if ($wantsJson($request)) {
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
+            if ($request->wantsJsonResponse()) {
                 return $response;
             }
 

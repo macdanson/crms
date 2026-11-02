@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Listeners\RecordAuthenticationActivity;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\BrowserSessions;
@@ -42,7 +43,7 @@ class SecurityController extends Controller
                 'job_title' => $user->job_title,
                 'status' => $user->status->label(),
                 'password_changed_at' => $user->password_changed_at?->toIso8601String(),
-                'last_login_at' => $user->last_login_at?->toIso8601String(),
+                'previous_login' => $request->session()->get(RecordAuthenticationActivity::PREVIOUS_LOGIN),
             ],
             'twoFactor' => [
                 'enabled' => $user->hasEnabledTwoFactorAuthentication(),
