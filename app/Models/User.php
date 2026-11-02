@@ -14,12 +14,12 @@ use Illuminate\Support\Carbon;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
- * An individual officer account. Shared or generic accounts are prohibited.
+ * An individual user account. Shared or generic accounts are prohibited.
  *
  * @property int $id
  * @property string $name
- * @property string|null $service_number
- * @property string|null $rank
+ * @property string|null $staff_number
+ * @property string|null $job_title
  * @property string $email
  * @property AccountStatus $status
  * @property Carbon|null $email_verified_at
@@ -36,7 +36,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'service_number', 'rank', 'email', 'password'])]
+#[Fillable(['name', 'staff_number', 'job_title', 'email', 'password'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {

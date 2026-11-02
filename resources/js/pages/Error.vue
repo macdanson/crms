@@ -47,10 +47,10 @@ const content = computed(
     <div class="flex min-h-svh items-center justify-center bg-surface px-4">
         <div class="max-w-md text-center">
             <AppLogoMark class="mx-auto size-16" />
-            <p class="crms-code mt-6 text-sm font-semibold text-gold-700">
+            <p class="crms-code mt-6 text-sm font-semibold text-accent-700">
                 Error {{ status }}
             </p>
-            <h1 class="mt-2 text-2xl font-bold text-crest-900">
+            <h1 class="mt-2 text-2xl font-bold text-brand-900">
                 {{ content.title }}
             </h1>
             <p class="mt-3 text-sm leading-6 text-slate-600">

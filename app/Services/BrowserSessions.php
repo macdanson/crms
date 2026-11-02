@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Lists and revokes an officer's server-side sessions.
+ * Lists and revokes a user's server-side sessions.
  *
  * Raw session identifiers never leave the server: each session is exposed
  * through a keyed hash that is only meaningful to this application.
@@ -99,7 +99,7 @@ class BrowserSessions
     }
 
     /**
-     * A deliberately small user-agent parser; enough for officers to recognise
+     * A deliberately small user-agent parser; enough for users to recognise
      * their own devices without adding a dependency.
      *
      * @return array{browser: string, platform: string, is_mobile: bool}

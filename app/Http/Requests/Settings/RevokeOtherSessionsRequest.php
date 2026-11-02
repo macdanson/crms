@@ -8,7 +8,7 @@ use Illuminate\Foundation\Http\FormRequest;
 class RevokeOtherSessionsRequest extends FormRequest
 {
     /**
-     * Any signed-in officer may sign out their own other sessions.
+     * Any signed-in user may sign out their own other sessions.
      */
     public function authorize(): bool
     {

@@ -5,8 +5,9 @@ import AppLogoMark from '@/components/AppLogoMark.vue';
 import { cn } from '@/lib/utils';
 
 /**
- * Horizontal lockup: Crane Shield mark + CRMS wordmark + descriptor.
- * Use `reversed` on Crest Blue / dark backgrounds.
+ * Horizontal lockup: Trace mark + CRMS wordmark + descriptor. The
+ * organisation line only appears when CRMS_ORGANISATION is configured.
+ * Use `reversed` on Ink / dark backgrounds.
  */
 const props = withDefaults(
     defineProps<{
@@ -45,7 +46,7 @@ const wordSize = computed(
                     cn(
                         'font-extrabold tracking-[0.12em]',
                         wordSize,
-                        reversed ? 'text-white' : 'text-crest-900',
+                        reversed ? 'text-white' : 'text-brand-900',
                     )
                 "
             >
@@ -66,17 +67,20 @@ const wordSize = computed(
                         :class="
                             cn(
                                 'text-xs font-semibold',
-                                reversed ? 'text-white' : 'text-crest-900',
+                                reversed ? 'text-white' : 'text-brand-900',
                             )
                         "
                     >
                         {{ product.full_name }}
                     </span>
                     <span
+                        v-if="product.organisation"
                         :class="
                             cn(
                                 'text-[10px] font-semibold tracking-[0.16em] uppercase',
-                                reversed ? 'text-gold-500' : 'text-gold-700',
+                                reversed
+                                    ? 'text-accent-500'
+                                    : 'text-accent-700',
                             )
                         "
                     >

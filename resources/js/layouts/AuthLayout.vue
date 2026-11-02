@@ -15,7 +15,7 @@ const assurances = [
     {
         icon: User,
         title: 'Individual accounts',
-        text: 'Every action is attributable to a named officer.',
+        text: 'Every action is attributable to a named user.',
     },
     {
         icon: Lock,
@@ -39,16 +39,17 @@ const assurances = [
 
             <div class="relative z-10 max-w-md">
                 <p
-                    class="text-xs font-semibold tracking-[0.22em] text-gold-500 uppercase"
+                    class="text-xs font-semibold tracking-[0.22em] text-accent-500 uppercase"
                 >
-                    {{ product.motto }}
+                    {{ product.tagline }}
                 </p>
                 <h2 class="mt-4 text-4xl leading-tight font-bold">
                     Accurate records.<br />Accountable access.
                 </h2>
-                <p class="mt-4 text-base leading-7 text-crest-200">
-                    The secure national platform for registering cases, linking
-                    people to cases and recording verified outcomes.
+                <p class="mt-4 text-base leading-7 text-brand-200">
+                    The secure research platform for recording cases, tracing
+                    links between people and cases, and analysing verified
+                    outcomes with partner police services.
                 </p>
 
                 <ul class="mt-10 space-y-5">
@@ -58,7 +59,7 @@ const assurances = [
                         class="flex gap-4"
                     >
                         <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-gold-500 ring-1 ring-white/15"
+                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent-500 ring-1 ring-white/15"
                         >
                             <ElIcon :size="20"
                                 ><component :is="item.icon"
@@ -68,7 +69,7 @@ const assurances = [
                             <span class="block font-semibold">{{
                                 item.title
                             }}</span>
-                            <span class="block text-sm text-crest-200">{{
+                            <span class="block text-sm text-brand-200">{{
                                 item.text
                             }}</span>
                         </span>
@@ -76,9 +77,10 @@ const assurances = [
                 </ul>
             </div>
 
-            <p class="relative z-10 text-xs text-crest-300">
-                &copy; {{ year }} {{ product.organisation }}. Restricted system
-                for authorised personnel.
+            <p class="relative z-10 text-xs text-brand-300">
+                &copy; {{ year }}
+                {{ product.organisation ?? product.full_name }}. Restricted
+                system for authorised personnel.
             </p>
 
             <AppLogoMark
@@ -90,7 +92,7 @@ const assurances = [
 
         <main class="flex flex-1 flex-col">
             <div
-                class="h-1 w-full bg-gradient-to-r from-crest-600 via-gold-500 to-signal-500 lg:hidden"
+                class="h-1 w-full bg-gradient-to-r from-brand-600 via-accent-500 to-signal-500 lg:hidden"
                 aria-hidden="true"
             />
             <div

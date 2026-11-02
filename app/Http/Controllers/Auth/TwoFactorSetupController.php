@@ -38,7 +38,7 @@ class TwoFactorSetupController extends Controller
         }
 
         // Generates a secret only when none exists, so reloading the page
-        // keeps the code already scanned into the officer's app.
+        // keeps the code already scanned into the user's app.
         $enable($user);
         $user->refresh();
 

@@ -35,8 +35,8 @@ const strength = computed(() => {
         [
             { label: 'Very weak', color: 'bg-signal-500' },
             { label: 'Weak', color: 'bg-signal-500' },
-            { label: 'Fair', color: 'bg-gold-500' },
-            { label: 'Good', color: 'bg-gold-500' },
+            { label: 'Fair', color: 'bg-accent-500' },
+            { label: 'Good', color: 'bg-accent-500' },
             { label: 'Meets policy', color: 'bg-emerald-600' },
         ][score.value] ?? { label: '', color: 'bg-slate-200' }
     );

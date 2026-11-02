@@ -62,7 +62,7 @@ class RecordAuthenticationActivity
                 'crms.last_activity_at' => $now,
             ]);
 
-            // The officer has just proven their password; avoid asking again
+            // The user has just proven their password; avoid asking again
             // straight away (e.g. during mandatory authenticator enrolment).
             $request->session()->passwordConfirmed();
         }
@@ -175,7 +175,7 @@ class RecordAuthenticationActivity
     }
 
     /**
-     * Alert the officer when a sign-in comes from a browser that has not been
+     * Alert the user when a sign-in comes from a browser that has not been
      * used successfully on their account recently. The very first sign-in
      * after activation is not alerted.
      */

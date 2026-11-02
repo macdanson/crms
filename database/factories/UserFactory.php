@@ -13,7 +13,7 @@ use Laravel\Fortify\RecoveryCode;
 use PragmaRX\Google2FA\Google2FA;
 
 /**
- * Generates synthetic officers only. Never seed real personnel data (§24).
+ * Generates synthetic users only. Never seed real personnel data (§24).
  *
  * @extends Factory<User>
  */
@@ -38,10 +38,10 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
-            'service_number' => 'TEST-'.fake()->unique()->numerify('######'),
-            'rank' => fake()->randomElement([
-                'Police Constable', 'Corporal', 'Sergeant', 'Assistant Inspector of Police',
-                'Inspector of Police', 'Assistant Superintendent of Police', 'Superintendent of Police',
+            'staff_number' => 'TEST-'.fake()->unique()->numerify('######'),
+            'job_title' => fake()->randomElement([
+                'Research Assistant', 'Data Analyst', 'Crime Analyst', 'Statistician',
+                'Senior Statistician', 'Research Fellow', 'Police Liaison Analyst',
             ]),
             'email' => fake()->unique()->userName().'@crms.test',
             'status' => AccountStatus::Active,
@@ -53,7 +53,7 @@ class UserFactory extends Factory
     }
 
     /**
-     * Provisioned but not yet activated by the officer.
+     * Provisioned but not yet activated by the user.
      */
     public function pending(): static
     {
@@ -81,7 +81,7 @@ class UserFactory extends Factory
     }
 
     /**
-     * An officer with a confirmed authenticator app.
+     * A user with a confirmed authenticator app.
      */
     public function withTwoFactor(?string $secret = null): static
     {

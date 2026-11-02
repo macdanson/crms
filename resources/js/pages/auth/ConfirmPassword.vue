@@ -33,7 +33,7 @@ function submit(): void {
         class="mb-6 flex items-center gap-3 rounded-lg border border-slate-200 p-3"
     >
         <span
-            class="flex size-10 items-center justify-center rounded-full bg-crest-600 text-sm font-semibold text-white"
+            class="flex size-10 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white"
             >{{ user.initials }}</span
         >
         <span class="leading-tight">

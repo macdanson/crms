@@ -48,7 +48,7 @@ function submit(): void {
 
     <Link
         :href="login.url()"
-        class="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-crest-600 hover:text-crest-800"
+        class="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-800"
     >
         <ElIcon><ArrowLeft /></ElIcon>
         Back to sign in

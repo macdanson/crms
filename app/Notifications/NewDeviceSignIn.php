@@ -9,7 +9,7 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Alerts an officer that their account was used from an unrecognised device.
+ * Alerts a user that their account was used from an unrecognised device.
  */
 class NewDeviceSignIn extends Notification implements ShouldQueue
 {

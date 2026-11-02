@@ -29,11 +29,11 @@ const countdown = computed(() => {
         <template #header>
             <div class="flex items-center gap-3">
                 <span
-                    class="flex size-10 items-center justify-center rounded-full bg-gold-100 text-gold-700"
+                    class="flex size-10 items-center justify-center rounded-full bg-accent-100 text-accent-700"
                 >
                     <ElIcon :size="22"><Timer /></ElIcon>
                 </span>
-                <h2 class="text-lg font-bold text-crest-900">
+                <h2 class="text-lg font-bold text-brand-900">
                     Are you still there?
                 </h2>
             </div>
@@ -45,7 +45,7 @@ const countdown = computed(() => {
             For security, you will be signed out after a period of inactivity.
         </p>
         <p
-            class="crms-code mt-4 text-center text-4xl font-semibold text-crest-900"
+            class="crms-code mt-4 text-center text-4xl font-semibold text-brand-900"
             role="timer"
             aria-live="assertive"
         >

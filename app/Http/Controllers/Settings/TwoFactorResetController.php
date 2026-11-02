@@ -9,8 +9,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * Replaces the officer's authenticator (e.g. a new phone). The old secret is
- * discarded and the officer is taken straight to re-enrolment.
+ * Replaces the user's authenticator (e.g. a new phone). The old secret is
+ * discarded and the user is taken straight to re-enrolment.
  */
 class TwoFactorResetController extends Controller
 {

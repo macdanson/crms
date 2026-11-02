@@ -6,9 +6,9 @@ import { heartbeat } from '@/routes/session';
 /**
  * Browser half of the idle-timeout policy (developer guide §16).
  *
- * The server is the authority: EnforceSessionTimeouts signs the officer out
+ * The server is the authority: EnforceSessionTimeouts signs the user out
  * once no request has arrived for the idle window. This composable keeps the
- * server informed while the officer is actively working on a page that makes
+ * server informed while the user is actively working on a page that makes
  * no requests, warns before an idle sign-out, and keeps open tabs in sync.
  */
 export function useIdleTimeout() {
@@ -78,7 +78,7 @@ export function useIdleTimeout() {
         expiring = true;
         showWarning.value = false;
         // Any authenticated request now meets the server-side timeout, which
-        // records the event and returns the officer to the sign-in page.
+        // records the event and returns the user to the sign-in page.
         router.visit(dashboard.url(), { replace: true });
     }
 
@@ -91,7 +91,7 @@ export function useIdleTimeout() {
         const sinceContact = (now - lastServerContact) / 1000;
         const remaining = Math.ceil(idleTimeout.value - sinceContact);
 
-        // Officer is active but quiet: refresh the server well before expiry.
+        // User is active but quiet: refresh the server well before expiry.
         if (
             lastUserActivity > lastServerContact &&
             sinceContact >= idleTimeout.value / 3 &&

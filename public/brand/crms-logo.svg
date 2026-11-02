@@ -1,19 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 72" role="img" aria-label="CRMS — Crime Records Management System">
-<g transform="translate(4 4)"><defs><clipPath id="crms-l"><path d="M32 6.2 53.4 13V30c0 13.4-8.8 23-21.4 27.6C19.4 53 10.6 43.4 10.6 30V13Z"/></clipPath></defs>
-<path d="M32 2.5 57 10.5V30c0 15.6-10.4 26.6-25 31.5C17.4 56.6 7 45.6 7 30V10.5Z" fill="#1D3C8F"/>
-<path d="M32 6.2 53.4 13V30c0 13.4-8.8 23-21.4 27.6C19.4 53 10.6 43.4 10.6 30V13Z" fill="none" stroke="#D4A017" stroke-width="1.1"/>
-<path d="M16.6 29.5C15.6 37 18.4 43.6 23.4 48.2M47.4 29.5C48.4 37 45.6 43.6 40.6 48.2" fill="none" stroke="#D4A017" stroke-width=".9" stroke-linecap="round"/>
-<g fill="#D4A017"><ellipse cx="15.2" cy="31.5" rx="1.05" ry="2.4" transform="rotate(-15 15.2 31.5)"/><ellipse cx="15.6" cy="36.6" rx="1.05" ry="2.4" transform="rotate(-32 15.6 36.6)"/><ellipse cx="17.4" cy="41.4" rx="1.05" ry="2.4" transform="rotate(-48 17.4 41.4)"/><ellipse cx="20.4" cy="45.6" rx="1.05" ry="2.4" transform="rotate(-62 20.4 45.6)"/><ellipse cx="48.8" cy="31.5" rx="1.05" ry="2.4" transform="rotate(15 48.8 31.5)"/><ellipse cx="48.4" cy="36.6" rx="1.05" ry="2.4" transform="rotate(32 48.4 36.6)"/><ellipse cx="46.6" cy="41.4" rx="1.05" ry="2.4" transform="rotate(48 46.6 41.4)"/><ellipse cx="43.6" cy="45.6" rx="1.05" ry="2.4" transform="rotate(62 43.6 45.6)"/></g>
-<path d="M30.4 18.6L22.8 15.53M30.4 18.6L22.99 12.81M30.4 18.6L24.4 10.35M30.4 18.6L26.84 8.83M30.4 18.6L29.72 8.82M30.4 18.6L32.19 10.19" stroke="#D4A017" stroke-width="1.15" stroke-linecap="round"/>
-<g fill="#D4A017"><circle cx="22.8" cy="15.53" r="1.25"/><circle cx="22.99" cy="12.81" r="1.25"/><circle cx="24.4" cy="10.35" r="1.25"/><circle cx="26.84" cy="8.83" r="1.25"/><circle cx="29.72" cy="8.82" r="1.25"/><circle cx="32.19" cy="10.19" r="1.25"/></g>
-<path d="M28.2 25.2C29.4 29.6 28 32.4 25.8 35.6 22.6 40.4 21.6 46 24.4 52.2L26.2 60H44C42.6 55.4 39.4 52.2 35.6 49.6 32 47 30.8 43.6 31.8 39.8 32.8 36 35.4 31.6 34.6 25.6Z" fill="#FFFFFF" clip-path="url(#crms-l)"/>
-<circle cx="31.3" cy="22.4" r="4.3" fill="#FFFFFF"/>
-<path d="M34.4 20.5 43.6 23.4 34.6 25.2Z" fill="#FFFFFF"/>
-<circle cx="32.1" cy="21.5" r="1" fill="#0B1B45"/>
-<ellipse cx="30.4" cy="27.6" rx="1.25" ry="1.6" fill="#C8102E"/></g>
-<text x="80" y="47" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="32" font-weight="800" textLength="104" lengthAdjust="spacingAndGlyphs" fill="#0B1B45">CRMS</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 336 72" role="img" aria-label="CRMS — Crime Records Management System">
+<g transform="translate(4 4)"><rect x="2" y="2" width="60" height="60" rx="14" fill="#0E5E6F"/>
+<path d="M42.02 44.02A17 17 0 1 1 42.02 19.98" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+<path d="M22 37L27 27L34 34L49 27" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<g fill="#FFFFFF"><circle cx="22" cy="37" r="3"/><circle cx="27" cy="27" r="3"/><circle cx="34" cy="34" r="3"/></g>
+<circle cx="49" cy="27" r="4.5" fill="#F2A900"/></g>
+<text x="80" y="47" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="32" font-weight="800" textLength="104" lengthAdjust="spacingAndGlyphs" fill="#082F38">CRMS</text>
 <rect x="198" y="16" width="1.5" height="40" fill="#CBD5E1"/>
-<text x="212" y="31" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="600" letter-spacing=".4" fill="#0B1B45">Crime Records</text>
-<text x="212" y="46" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="600" letter-spacing=".4" fill="#0B1B45">Management System</text>
-<text x="212" y="60" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="8.5" font-weight="600" letter-spacing="1.6" fill="#8A6500">UGANDA POLICE FORCE</text>
+<text x="212" y="33" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="600" letter-spacing=".4" fill="#082F38">Crime Records</text>
+<text x="212" y="48" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="600" letter-spacing=".4" fill="#082F38">Management System</text>
 </svg>

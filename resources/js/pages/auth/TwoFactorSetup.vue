@@ -96,7 +96,7 @@ function finish(): void {
                 </p>
                 <div class="mt-1 flex items-center justify-center gap-2">
                     <code
-                        class="crms-code rounded bg-crest-50 px-2 py-1 text-sm text-crest-900"
+                        class="crms-code rounded bg-brand-50 px-2 py-1 text-sm text-brand-900"
                         >{{ formattedKey }}</code
                     >
                     <ElButton

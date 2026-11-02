@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Applies browser hardening headers (developer guide §16).
  *
  * Authenticated responses are marked no-store so sensitive pages are not kept
- * by shared station browsers or intermediary caches.
+ * by shared browsers or intermediary caches.
  */
 class SetSecurityHeaders
 {

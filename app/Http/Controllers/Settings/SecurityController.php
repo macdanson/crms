@@ -11,13 +11,13 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The officer's own account security page: password, authenticator,
+ * The user's own account security page: password, authenticator,
  * active sessions and recent sign-in activity.
  */
 class SecurityController extends Controller
 {
     /**
-     * Audit events shown in the officer's "recent activity" list.
+     * Audit events shown in the user's "recent activity" list.
      *
      * @var list<string>
      */
@@ -38,8 +38,8 @@ class SecurityController extends Controller
             'account' => [
                 'name' => $user->name,
                 'email' => $user->email,
-                'service_number' => $user->service_number,
-                'rank' => $user->rank,
+                'staff_number' => $user->staff_number,
+                'job_title' => $user->job_title,
                 'status' => $user->status->label(),
                 'password_changed_at' => $user->password_changed_at?->toIso8601String(),
                 'last_login_at' => $user->last_login_at?->toIso8601String(),

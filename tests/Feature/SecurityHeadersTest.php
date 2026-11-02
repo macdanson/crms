@@ -29,7 +29,7 @@ it('stops browsers caching authenticated pages', function () {
 });
 
 it('reuses a well-formed incoming request id for tracing', function () {
-    $this->withHeader('X-Request-Id', 'station-proxy-1234abcd')
+    $this->withHeader('X-Request-Id', 'edge-proxy-1234abcd')
         ->get(route('login'))
-        ->assertHeader('X-Request-Id', 'station-proxy-1234abcd');
+        ->assertHeader('X-Request-Id', 'edge-proxy-1234abcd');
 });

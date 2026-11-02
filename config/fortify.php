@@ -163,7 +163,7 @@ return [
     */
 
     'features' => [
-        // Registration is intentionally disabled: officer accounts are provisioned
+        // Registration is intentionally disabled: user accounts are provisioned
         // by administrators and activated through an emailed invitation link.
         // Profile details are institution-managed, so self-service updates are off.
         Features::resetPasswords(),

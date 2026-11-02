@@ -7,7 +7,7 @@ use Laravel\Fortify\Actions\EnableTwoFactorAuthentication as FortifyEnableTwoFac
 /**
  * Fortify's "force" option replaces the secret of an already-confirmed
  * authenticator without clearing its confirmation, which would lock the
- * officer out. Forcing is therefore only allowed during enrolment.
+ * user out. Forcing is therefore only allowed during enrolment.
  */
 class EnableTwoFactorAuthentication extends FortifyEnableTwoFactorAuthentication
 {

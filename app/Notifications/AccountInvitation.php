@@ -8,7 +8,7 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Sends a newly provisioned officer a single-use account activation link.
+ * Sends a newly provisioned user a single-use account activation link.
  *
  * The message deliberately contains no case or personal information.
  */

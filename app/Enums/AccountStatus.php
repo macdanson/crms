@@ -3,9 +3,9 @@
 namespace App\Enums;
 
 /**
- * Lifecycle state of an officer account.
+ * Lifecycle state of a user account.
  *
- * Accounts are provisioned as Pending and only become Active once the officer
+ * Accounts are provisioned as Pending and only become Active once the user
  * has proven ownership of their email address by following an activation link.
  */
 enum AccountStatus: string

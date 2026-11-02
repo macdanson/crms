@@ -44,7 +44,7 @@ function downloadCodes(): void {
 <template>
     <div>
         <ol
-            class="crms-code grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border border-dashed border-crest-300 bg-crest-50 p-4 text-[13px] whitespace-nowrap text-crest-900 sm:grid-cols-2"
+            class="crms-code grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border border-dashed border-brand-300 bg-brand-50 p-4 text-[13px] whitespace-nowrap text-brand-900 sm:grid-cols-2"
         >
             <li v-for="code in codes" :key="code">{{ code }}</li>
         </ol>

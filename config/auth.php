@@ -100,7 +100,7 @@ return [
             'throttle' => 60,
         ],
 
-        // Account activation links sent to newly provisioned officers.
+        // Account activation links sent to newly provisioned users.
         'invitations' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),

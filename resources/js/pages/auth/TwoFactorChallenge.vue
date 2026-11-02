@@ -104,7 +104,7 @@ function submit(): void {
     <div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm">
         <button
             type="button"
-            class="inline-flex items-center gap-1.5 font-semibold text-crest-600 hover:text-crest-800"
+            class="inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:text-brand-800"
             @click="toggleMode"
         >
             <ElIcon
@@ -125,7 +125,7 @@ function submit(): void {
     </div>
 
     <p class="mt-8 rounded-lg bg-slate-50 p-4 text-xs leading-5 text-slate-600">
-        Lost your phone and your recovery codes? Contact your station system
+        Lost your phone and your recovery codes? Contact your system
         administrator to reset your authenticator.
     </p>
 </template>

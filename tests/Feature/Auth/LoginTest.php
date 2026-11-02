@@ -23,7 +23,7 @@ it('does not offer public registration', function () {
     $this->post('/register', [])->assertNotFound();
 });
 
-it('signs in an active officer and records the sign-in', function () {
+it('signs in an active user and records the sign-in', function () {
     $user = User::factory()->create();
 
     $this->post(route('login.store'), [
@@ -38,10 +38,10 @@ it('signs in an active officer and records the sign-in', function () {
 });
 
 it('matches the email address case-insensitively', function () {
-    $user = User::factory()->create(['email' => 'officer@crms.test']);
+    $user = User::factory()->create(['email' => 'user@crms.test']);
 
     $this->post(route('login.store'), [
-        'email' => 'Officer@CRMS.test',
+        'email' => 'User@CRMS.test',
         'password' => UserFactory::PASSWORD,
     ]);
 
@@ -96,8 +96,8 @@ it('refuses sign-in for accounts that are not active', function (string $state, 
     expect(AuditEvent::where('event', 'auth.login.blocked')->where('user_id', $user->id)->exists())->toBeTrue();
 })->with([
     'pending' => ['pending', 'This account has not been activated. Use the activation link sent to your email address.'],
-    'suspended' => ['suspended', 'This account is suspended. Contact your station system administrator.'],
-    'deactivated' => ['deactivated', 'This account is no longer active. Contact your station system administrator.'],
+    'suspended' => ['suspended', 'This account is suspended. Contact your system administrator.'],
+    'deactivated' => ['deactivated', 'This account is no longer active. Contact your system administrator.'],
 ]);
 
 it('locks out repeated failed attempts and audits the lockout', function () {
@@ -116,7 +116,7 @@ it('locks out repeated failed attempts and audits the lockout', function () {
     expect(AuditEvent::where('event', 'auth.lockout')->exists())->toBeTrue();
 });
 
-it('sends officers with a confirmed authenticator to the two-factor challenge', function () {
+it('sends users with a confirmed authenticator to the two-factor challenge', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->post(route('login.store'), [
@@ -127,7 +127,7 @@ it('sends officers with a confirmed authenticator to the two-factor challenge', 
     $this->assertGuest();
 });
 
-it('alerts the officer when a new device signs in', function () {
+it('alerts the user when a new device signs in', function () {
     Notification::fake();
     $user = User::factory()->create();
 
@@ -154,7 +154,7 @@ it('does not alert on the first sign-in or a recognised device', function () {
     Notification::assertNothingSentTo($user);
 });
 
-it('signs the officer out and records it', function () {
+it('signs the user out and records it', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)

@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-#[Signature('officer:invite
-    {email : Official email address of the officer}
+#[Signature('user:invite
+    {email : Official email address of the user}
     {--name= : Full name}
-    {--service-number= : Police force / service number}
-    {--rank= : Rank}')]
-#[Description('Provision a pending officer account and email a single-use activation link')]
-class InviteOfficer extends Command
+    {--staff-number= : Staff or personnel number}
+    {--job-title= : Job title}')]
+#[Description('Provision a pending user account and email a single-use activation link')]
+class InviteUser extends Command
 {
     /**
      * Execute the console command.
@@ -26,17 +26,17 @@ class InviteOfficer extends Command
         $input = [
             'email' => (string) $this->argument('email'),
             'name' => (string) ($this->option('name') ?: $this->ask('Full name')),
-            'service_number' => $this->option('service-number') ?: null,
-            'rank' => $this->option('rank') ?: null,
+            'staff_number' => $this->option('staff-number') ?: null,
+            'job_title' => $this->option('job-title') ?: null,
         ];
 
         $validator = Validator::make($input, [
             'email' => ['required', 'email', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
-            'service_number' => ['nullable', 'string', 'max:32', Rule::unique('users', 'service_number')->where(
+            'staff_number' => ['nullable', 'string', 'max:32', Rule::unique('users', 'staff_number')->where(
                 fn ($query) => $query->where('email', '!=', strtolower($input['email'])),
             )],
-            'rank' => ['nullable', 'string', 'max:64'],
+            'job_title' => ['nullable', 'string', 'max:64'],
         ]);
 
         if ($validator->fails()) {
@@ -51,8 +51,8 @@ class InviteOfficer extends Command
             $user = $accounts->invite([
                 'name' => $input['name'],
                 'email' => $input['email'],
-                'service_number' => $input['service_number'],
-                'rank' => $input['rank'],
+                'staff_number' => $input['staff_number'],
+                'job_title' => $input['job_title'],
             ]);
         } catch (ValidationException $exception) {
             $this->components->error($exception->getMessage());

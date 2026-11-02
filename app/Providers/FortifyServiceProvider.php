@@ -73,8 +73,8 @@ class FortifyServiceProvider extends ServiceProvider
 
     private function configureRateLimiting(): void
     {
-        // Applied to every Fortify route. Generous enough for many officers
-        // sharing one station network address, tight enough to slow abuse.
+        // Applied to every Fortify route. Generous enough for many users
+        // sharing one office network address, tight enough to slow abuse.
         RateLimiter::for('fortify', fn (Request $request) => Limit::perMinute(120)
             ->by($request->user()?->getAuthIdentifier() ?? $request->ip()));
 

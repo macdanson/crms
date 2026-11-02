@@ -31,7 +31,7 @@ class HandleInertiaRequests extends Middleware
     /**
      * Define the props that are shared by default.
      *
-     * Only the minimum the shell needs about the officer is shared; the full
+     * Only the minimum the shell needs about the user is shared; the full
      * user model (and its hidden secrets) is never serialised to the browser.
      *
      * @see https://inertiajs.com/shared-data
@@ -52,8 +52,8 @@ class HandleInertiaRequests extends Middleware
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'rank' => $user->rank,
-                    'service_number' => $user->service_number,
+                    'job_title' => $user->job_title,
+                    'staff_number' => $user->staff_number,
                     'initials' => $user->initials(),
                     'two_factor_enabled' => $user->hasEnabledTwoFactorAuthentication(),
                 ] : null,
@@ -70,7 +70,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
-     * Fortify flashes machine-readable status codes; officers see plain
+     * Fortify flashes machine-readable status codes; users see plain
      * language instead. Codes whose outcome the page already shows are hidden.
      */
     private function statusMessage(mixed $status): ?string

@@ -8,15 +8,16 @@ return [
     |--------------------------------------------------------------------------
     |
     | Names used across the interface, notifications and generated documents.
+| The organisation name is optional; screens fall back to the product name.
     |
     */
 
     'product' => [
         'short_name' => 'CRMS',
         'full_name' => 'Crime Records Management System',
-        'organisation' => env('CRMS_ORGANISATION', 'Uganda Police Force'),
-        'motto' => 'Protect & Serve',
-        'support_contact' => env('CRMS_SUPPORT_CONTACT', 'your station system administrator'),
+        'organisation' => env('CRMS_ORGANISATION'),
+        'tagline' => env('CRMS_TAGLINE', 'Evidence-led crime analysis'),
+        'support_contact' => env('CRMS_SUPPORT_CONTACT', 'your system administrator'),
     ],
 
     /*
@@ -27,12 +28,12 @@ return [
     | These values implement section 6 and 16 of the developer guide. Final
     | values must be approved by the institution's security team.
     |
-    | require_mfa:              Every officer must enrol an authenticator app.
+    | require_mfa:              Every user must enrol an authenticator app.
     | idle_timeout:             Minutes of inactivity before forced sign-out.
     | idle_warning:             Seconds of warning shown before an idle sign-out.
     | absolute_lifetime:        Maximum minutes a session may live, active or not.
     | activation_expire:        Minutes an account activation link remains valid.
-    | notify_new_device:        Email officers when a new device signs in.
+    | notify_new_device:        Email users when a new device signs in.
     |
     */
 

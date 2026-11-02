@@ -2,16 +2,15 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\AccountStatus;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('officer:reactivate {email}')]
-#[Description('Restore access to a suspended or deactivated officer account')]
-class ReactivateOfficer extends Command
+#[Signature('user:suspend {email} {--reason= : Why access is being withdrawn}')]
+#[Description('Suspend a user account and sign out all of its sessions immediately')]
+class SuspendUser extends Command
 {
     /**
      * Execute the console command.
@@ -26,15 +25,17 @@ class ReactivateOfficer extends Command
             return self::FAILURE;
         }
 
-        if (! in_array($user->status, [AccountStatus::Suspended, AccountStatus::Deactivated], true)) {
-            $this->components->error("This account is {$user->status->label()} and cannot be reactivated.");
+        $reason = (string) ($this->option('reason') ?: $this->ask('Reason for suspension'));
+
+        if (trim($reason) === '') {
+            $this->components->error('A reason is required.');
 
             return self::FAILURE;
         }
 
-        $accounts->reactivate($user);
+        $accounts->suspend($user, $reason);
 
-        $this->components->info("{$user->email} is active again.");
+        $this->components->info("{$user->email} has been suspended.");
 
         return self::SUCCESS;
     }

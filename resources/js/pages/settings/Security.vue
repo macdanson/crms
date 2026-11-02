@@ -64,8 +64,8 @@ defineProps<{
     account: {
         name: string;
         email: string;
-        service_number: string | null;
-        rank: string | null;
+        staff_number: string | null;
+        job_title: string | null;
         status: string;
         password_changed_at: string | null;
         last_login_at: string | null;
@@ -196,7 +196,7 @@ function submitSignOutOthers(): void {
 
     <div class="space-y-6">
         <header>
-            <h1 class="text-2xl font-bold tracking-tight text-crest-900">
+            <h1 class="text-2xl font-bold tracking-tight text-brand-900">
                 Account security
             </h1>
             <p class="mt-1 text-sm text-slate-600">
@@ -208,7 +208,7 @@ function submitSignOutOthers(): void {
         <!-- Profile -->
         <ElCard shadow="never">
             <template #header>
-                <h2 class="font-bold text-crest-900">Your account</h2>
+                <h2 class="font-bold text-brand-900">Your account</h2>
             </template>
             <ElDescriptions :column="2" border class="crms-descriptions">
                 <ElDescriptionsItem label="Name">{{
@@ -217,12 +217,12 @@ function submitSignOutOthers(): void {
                 <ElDescriptionsItem label="Email">{{
                     account.email
                 }}</ElDescriptionsItem>
-                <ElDescriptionsItem label="Rank">{{
-                    account.rank ?? '—'
+                <ElDescriptionsItem label="Job title">{{
+                    account.job_title ?? '—'
                 }}</ElDescriptionsItem>
-                <ElDescriptionsItem label="Force number">
+                <ElDescriptionsItem label="Staff number">
                     <span class="crms-code">{{
-                        account.service_number ?? '—'
+                        account.staff_number ?? '—'
                     }}</span>
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="Status">
@@ -245,7 +245,7 @@ function submitSignOutOthers(): void {
             <ElCard shadow="never">
                 <template #header>
                     <div class="flex items-center justify-between">
-                        <h2 class="font-bold text-crest-900">Password</h2>
+                        <h2 class="font-bold text-brand-900">Password</h2>
                         <span class="text-xs text-slate-500"
                             >Changed
                             {{
@@ -309,7 +309,7 @@ function submitSignOutOthers(): void {
             <ElCard shadow="never">
                 <template #header>
                     <div class="flex items-center justify-between">
-                        <h2 class="font-bold text-crest-900">
+                        <h2 class="font-bold text-brand-900">
                             Multi-factor authentication
                         </h2>
                         <ElTag
@@ -324,7 +324,7 @@ function submitSignOutOthers(): void {
 
                 <div class="flex items-start gap-4">
                     <span
-                        class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-crest-50 text-crest-600"
+                        class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600"
                     >
                         <ElIcon :size="22"><Iphone /></ElIcon>
                     </span>
@@ -349,7 +349,7 @@ function submitSignOutOthers(): void {
                             :size="20"
                             :class="
                                 twoFactor.recovery_codes_remaining <= 3
-                                    ? 'text-gold-700'
+                                    ? 'text-accent-700'
                                     : 'text-slate-500'
                             "
                         >
@@ -395,7 +395,7 @@ function submitSignOutOthers(): void {
             <template #header>
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="font-bold text-crest-900">
+                        <h2 class="font-bold text-brand-900">
                             Active sessions
                         </h2>
                         <p class="text-xs text-slate-500">
@@ -477,7 +477,7 @@ function submitSignOutOthers(): void {
         <ElCard shadow="never">
             <template #header>
                 <div>
-                    <h2 class="font-bold text-crest-900">Recent activity</h2>
+                    <h2 class="font-bold text-brand-900">Recent activity</h2>
                     <p class="text-xs text-slate-500">
                         Sign-in and security events recorded for your account.
                     </p>
@@ -535,7 +535,7 @@ function submitSignOutOthers(): void {
             Keep them private.
         </p>
         <div
-            class="crms-code grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border border-dashed border-crest-300 bg-crest-50 p-4 text-[13px] whitespace-nowrap text-crest-900 sm:grid-cols-2"
+            class="crms-code grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border border-dashed border-brand-300 bg-brand-50 p-4 text-[13px] whitespace-nowrap text-brand-900 sm:grid-cols-2"
         >
             <span v-for="code in visibleCodes" :key="code">{{ code }}</span>
         </div>

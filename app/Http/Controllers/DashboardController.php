@@ -8,7 +8,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The officer's landing page after sign-in.
+ * The user's landing page after sign-in.
  */
 class DashboardController extends Controller
 {

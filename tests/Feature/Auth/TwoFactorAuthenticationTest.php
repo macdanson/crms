@@ -62,7 +62,7 @@ it('accepts a recovery code once and then retires it', function () {
     expect($user->fresh()->recoveryCodes())->not->toContain($code);
 });
 
-it('forces an officer without an authenticator to enrol before using the system', function () {
+it('forces a user without an authenticator to enrol before using the system', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
@@ -70,7 +70,7 @@ it('forces an officer without an authenticator to enrol before using the system'
         ->assertRedirect(route('two-factor.setup'));
 });
 
-it('lets officers use the system without an authenticator when MFA is not required', function () {
+it('lets users use the system without an authenticator when MFA is not required', function () {
     config(['crms.auth.require_mfa' => false]);
     $user = User::factory()->create();
 
@@ -114,7 +114,7 @@ it('confirms enrolment with a valid code and then shows the recovery codes once'
     $this->get(route('two-factor.setup'))->assertRedirect(route('dashboard'));
 });
 
-it('does not let officers switch off mandatory multi-factor authentication', function () {
+it('does not let users switch off mandatory multi-factor authentication', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)

@@ -5,7 +5,7 @@ use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Support\Facades\DB;
 
-it('signs the officer out after the idle timeout', function () {
+it('signs the user out after the idle timeout', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)->get(route('dashboard'))->assertOk();
@@ -20,7 +20,7 @@ it('signs the officer out after the idle timeout', function () {
     expect(AuditEvent::where('event', 'auth.session.expired')->sole()->context)->toBe(['reason' => 'idle_timeout']);
 });
 
-it('keeps an active officer signed in when requests arrive within the idle window', function () {
+it('keeps an active user signed in when requests arrive within the idle window', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)->get(route('dashboard'));
@@ -33,7 +33,7 @@ it('keeps an active officer signed in when requests arrive within the idle windo
     $this->get(route('dashboard'))->assertOk();
 });
 
-it('ends the session at the absolute lifetime even when the officer is active', function () {
+it('ends the session at the absolute lifetime even when the user is active', function () {
     config(['crms.auth.absolute_lifetime' => 30]);
     $user = User::factory()->withTwoFactor()->create();
     $this->actingAs($user)->get(route('dashboard'));
@@ -58,7 +58,7 @@ it('returns 401 from the heartbeat once the session has expired', function () {
     $this->postJson(route('session.heartbeat'))->assertUnauthorized();
 });
 
-it('ends a suspended officer’s existing session on their next request', function () {
+it('ends a suspended user’s existing session on their next request', function () {
     $user = User::factory()->withTwoFactor()->create();
     $this->actingAs($user)->get(route('dashboard'))->assertOk();
 
@@ -72,7 +72,7 @@ it('ends a suspended officer’s existing session on their next request', functi
     expect(AuditEvent::where('event', 'auth.session.terminated')->where('user_id', $user->id)->exists())->toBeTrue();
 });
 
-it('deletes a suspended officer’s stored sessions immediately', function () {
+it('deletes a suspended user’s stored sessions immediately', function () {
     config(['session.driver' => 'database']);
     $user = User::factory()->withTwoFactor()->create();
 

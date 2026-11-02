@@ -11,15 +11,15 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 
 /**
- * Invites an officer and returns the emailed activation token.
+ * Invites a user and returns the emailed activation token.
  *
  * @return array{0: User, 1: string}
  */
-function inviteOfficer(string $email = 'new.officer@crms.test'): array
+function inviteUser(string $email = 'new.user@crms.test'): array
 {
     Notification::fake();
 
-    $user = app(AccountLifecycle::class)->invite(['name' => 'New Officer', 'email' => $email]);
+    $user = app(AccountLifecycle::class)->invite(['name' => 'New User', 'email' => $email]);
 
     $token = '';
     Notification::assertSentTo($user, AccountInvitation::class, function (AccountInvitation $notification) use (&$token): bool {
@@ -32,14 +32,14 @@ function inviteOfficer(string $email = 'new.officer@crms.test'): array
 }
 
 it('provisions a pending account and emails a single-use activation link', function () {
-    [$user] = inviteOfficer();
+    [$user] = inviteUser();
 
     expect($user->status)->toBe(AccountStatus::Pending)
         ->and(AuditEvent::where('event', 'account.invited')->where('user_id', $user->id)->exists())->toBeTrue();
 });
 
 it('renders the activation page with the invited email address', function () {
-    [$user, $token] = inviteOfficer();
+    [$user, $token] = inviteUser();
 
     $this->get(route('activation.create', ['token' => $token, 'email' => $user->email]))
         ->assertOk()
@@ -50,7 +50,7 @@ it('renders the activation page with the invited email address', function () {
 });
 
 it('activates the account with a valid token and strong password', function () {
-    [$user, $token] = inviteOfficer();
+    [$user, $token] = inviteUser();
 
     $this->post(route('activation.store'), [
         'token' => $token,
@@ -66,7 +66,7 @@ it('activates the account with a valid token and strong password', function () {
 });
 
 it('does not accept an activation link twice', function () {
-    [$user, $token] = inviteOfficer();
+    [$user, $token] = inviteUser();
     $payload = [
         'token' => $token,
         'email' => $user->email,
@@ -82,7 +82,7 @@ it('does not accept an activation link twice', function () {
 });
 
 it('rejects an expired activation link', function () {
-    [$user, $token] = inviteOfficer();
+    [$user, $token] = inviteUser();
 
     $this->travel(config('crms.auth.activation_expire') + 1)->minutes();
 
@@ -97,7 +97,7 @@ it('rejects an expired activation link', function () {
 });
 
 it('rejects a weak password during activation', function () {
-    [$user, $token] = inviteOfficer();
+    [$user, $token] = inviteUser();
 
     $this->post(route('activation.store'), [
         'token' => $token,

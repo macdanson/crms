@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Sends officers who have not finished authenticator enrolment to the
+ * Sends users who have not finished authenticator enrolment to the
  * mandatory setup screen before they can reach any operational page (§6.1).
  */
 class EnsureTwoFactorIsEnrolled

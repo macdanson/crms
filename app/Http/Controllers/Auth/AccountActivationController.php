@@ -11,7 +11,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Lets a newly provisioned officer choose a password using their emailed,
+ * Lets a newly provisioned user choose a password using their emailed,
  * single-use activation link. Accounts are never self-registered.
  */
 class AccountActivationController extends Controller

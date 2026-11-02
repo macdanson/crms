@@ -14,9 +14,9 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Events\TwoFactorAuthenticationDisabled;
 
 /**
- * Provisioning and lifecycle operations for officer accounts (developer guide §6, §27.2).
+ * Provisioning and lifecycle operations for user accounts (developer guide §6, §27.2).
  *
- * Every state change is audited and, where access is withdrawn, the officer's
+ * Every state change is audited and, where access is withdrawn, the user's
  * live sessions are revoked immediately.
  */
 class AccountLifecycle
@@ -28,9 +28,9 @@ class AccountLifecycle
 
     /**
      * Provision a pending account (or refresh an existing pending one) and email
-     * the officer a single-use activation link.
+     * the user a single-use activation link.
      *
-     * @param  array{name: string, email: string, service_number?: string|null, rank?: string|null}  $attributes
+     * @param  array{name: string, email: string, staff_number?: string|null, job_title?: string|null}  $attributes
      */
     public function invite(array $attributes, ?User $invitedBy = null): User
     {
@@ -48,10 +48,10 @@ class AccountLifecycle
         $user->forceFill([
             'name' => $attributes['name'],
             'email' => $email,
-            'service_number' => $attributes['service_number'] ?? $user->service_number,
-            'rank' => $attributes['rank'] ?? $user->rank,
+            'staff_number' => $attributes['staff_number'] ?? $user->staff_number,
+            'job_title' => $attributes['job_title'] ?? $user->job_title,
             'status' => AccountStatus::Pending,
-            // An unusable random secret until the officer chooses a password.
+            // An unusable random secret until the user chooses a password.
             'password' => Str::password(64),
         ])->save();
 
@@ -132,7 +132,7 @@ class AccountLifecycle
     }
 
     /**
-     * Clear the officer's authenticator so they must enrol again at next
+     * Clear the user's authenticator so they must enrol again at next
      * sign-in (e.g. lost phone). Existing sessions are revoked.
      */
     public function resetTwoFactor(User $user, ?User $actor = null): void
@@ -145,8 +145,8 @@ class AccountLifecycle
 
         TwoFactorAuthenticationDisabled::dispatch($user);
 
-        // Officers replacing their own authenticator keep their current session;
-        // a reset by anyone else signs the officer out everywhere.
+        // Users replacing their own authenticator keep their current session;
+        // a reset by anyone else signs the user out everywhere.
         $revoked = $actor?->is($user) ? 0 : $this->sessions->revokeAll($user);
 
         $this->audit->record('mfa.reset', AuditOutcome::Success, $user, [

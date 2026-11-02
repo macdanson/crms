@@ -10,7 +10,7 @@ use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
 
 /**
  * Returns an identical answer whether or not the email address belongs to an
- * account, so the reset form cannot be used to discover officer emails.
+ * account, so the reset form cannot be used to discover user emails.
  */
 class PasswordResetLinkRequestedResponse implements FailedPasswordResetLinkRequestResponse, SuccessfulPasswordResetLinkRequestResponse
 {

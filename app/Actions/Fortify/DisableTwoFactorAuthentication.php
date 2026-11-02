@@ -6,8 +6,8 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication as FortifyDisableTwoFactorAuthentication;
 
 /**
- * Stops officers switching off multi-factor authentication while the
- * institution requires it. Officers who lose their device use the controlled
+ * Stops users switching off multi-factor authentication while the
+ * institution requires it. Users who lose their device use the controlled
  * "reset authenticator" flow, which forces immediate re-enrolment.
  */
 class DisableTwoFactorAuthentication extends FortifyDisableTwoFactorAuthentication

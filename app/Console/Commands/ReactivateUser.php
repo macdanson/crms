@@ -2,15 +2,16 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\AccountStatus;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('officer:reset-mfa {email}')]
-#[Description('Clear an officer\'s authenticator (e.g. lost phone) so they must enrol again at next sign-in')]
-class ResetOfficerTwoFactor extends Command
+#[Signature('user:reactivate {email}')]
+#[Description('Restore access to a suspended or deactivated user account')]
+class ReactivateUser extends Command
 {
     /**
      * Execute the console command.
@@ -25,13 +26,15 @@ class ResetOfficerTwoFactor extends Command
             return self::FAILURE;
         }
 
-        if (! $this->confirm("Reset the authenticator for {$user->email}? Their sessions will be signed out.", true)) {
+        if (! in_array($user->status, [AccountStatus::Suspended, AccountStatus::Deactivated], true)) {
+            $this->components->error("This account is {$user->status->label()} and cannot be reactivated.");
+
             return self::FAILURE;
         }
 
-        $accounts->resetTwoFactor($user, actor: null);
+        $accounts->reactivate($user);
 
-        $this->components->info('Authenticator cleared. The officer will be asked to enrol again at next sign-in.');
+        $this->components->info("{$user->email} is active again.");
 
         return self::SUCCESS;
     }

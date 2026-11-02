@@ -13,7 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Lets officers sign out sessions on other devices (developer guide §16).
+ * Lets users sign out sessions on other devices (developer guide §16).
  */
 class BrowserSessionController extends Controller
 {

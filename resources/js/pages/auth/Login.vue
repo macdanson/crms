@@ -34,7 +34,7 @@ function submit(): void {
                 type="email"
                 name="email"
                 autocomplete="username"
-                placeholder="name@police.go.ug"
+                placeholder="name@organisation.org"
                 :prefix-icon="Message"
                 required
             />
@@ -55,7 +55,7 @@ function submit(): void {
         <div class="-mt-2 mb-6 flex justify-end">
             <Link
                 :href="passwordRequest.url()"
-                class="text-sm font-semibold text-crest-600 hover:text-crest-800"
+                class="text-sm font-semibold text-brand-600 hover:text-brand-800"
             >
                 Forgot your password?
             </Link>
@@ -72,7 +72,7 @@ function submit(): void {
     </ElForm>
 
     <p class="mt-8 rounded-lg bg-slate-50 p-4 text-xs leading-5 text-slate-600">
-        Accounts are issued by your station system administrator. Never share
-        your password or authenticator codes with anyone, including IT staff.
+        Accounts are issued by your system administrator. Never share your
+        password or authenticator codes with anyone, including IT staff.
     </p>
 </template>

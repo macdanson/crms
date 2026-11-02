@@ -33,7 +33,7 @@ it('asks for the password again before showing security settings', function () {
         ->assertRedirect(route('password.confirm'));
 });
 
-it('shows the officer their account, authenticator and activity', function () {
+it('shows the user their account, authenticator and activity', function () {
     $user = User::factory()->withTwoFactor()->create();
     AuditEvent::create([
         'occurred_at' => now(),
@@ -109,7 +109,7 @@ it('rejects reusing the current password', function () {
         ->assertSessionHasErrors(['password' => 'Your new password must be different from your current password.']);
 });
 
-it('lists the officer’s sessions without exposing raw session identifiers', function () {
+it('lists the user’s sessions without exposing raw session identifiers', function () {
     config(['session.driver' => 'database']);
     $user = User::factory()->withTwoFactor()->create();
     storeOtherSession($user);
@@ -139,11 +139,11 @@ it('signs out a single other session', function () {
     expect(DB::table('sessions')->where('id', $sessionId)->exists())->toBeFalse();
 });
 
-it('cannot sign out another officer’s session', function () {
+it('cannot sign out another user’s session', function () {
     config(['session.driver' => 'database']);
     $user = User::factory()->withTwoFactor()->create();
-    $otherOfficer = User::factory()->withTwoFactor()->create();
-    $sessionId = storeOtherSession($otherOfficer);
+    $otherUser = User::factory()->withTwoFactor()->create();
+    $sessionId = storeOtherSession($otherUser);
 
     $this->actingAs($user)
         ->withSession(['auth.password_confirmed_at' => time()])
@@ -171,7 +171,7 @@ it('signs out all other sessions after checking the password', function () {
     expect(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeFalse();
 });
 
-it('replaces the authenticator and sends the officer to re-enrol', function () {
+it('replaces the authenticator and sends the user to re-enrol', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)

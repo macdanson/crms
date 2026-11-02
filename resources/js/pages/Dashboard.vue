@@ -74,14 +74,17 @@ const modules = [
             class="crms-pattern relative overflow-hidden rounded-2xl px-6 py-8 text-white sm:px-8"
         >
             <p
-                class="text-xs font-semibold tracking-[0.2em] text-gold-500 uppercase"
+                class="text-xs font-semibold tracking-[0.2em] text-accent-500 uppercase"
             >
-                {{ page.props.product.organisation }}
+                {{
+                    page.props.product.organisation ??
+                    page.props.product.tagline
+                }}
             </p>
             <h1 class="mt-2 text-2xl font-bold sm:text-3xl">
                 {{ greeting }}, {{ user?.name }}
             </h1>
-            <p class="mt-2 max-w-2xl text-sm leading-6 text-crest-200">
+            <p class="mt-2 max-w-2xl text-sm leading-6 text-brand-200">
                 You are signed in to the {{ page.props.product.full_name }}.
                 Access only the records you need for your duties.
             </p>
@@ -91,12 +94,12 @@ const modules = [
             <ElCard shadow="never" class="lg:col-span-1">
                 <template #header>
                     <div class="flex items-center justify-between">
-                        <h2 class="font-bold text-crest-900">
+                        <h2 class="font-bold text-brand-900">
                             Account security
                         </h2>
                         <Link
                             :href="securityShow.url()"
-                            class="text-sm font-semibold text-crest-600 hover:text-crest-800"
+                            class="text-sm font-semibold text-brand-600 hover:text-brand-800"
                             >Manage</Link
                         >
                     </div>
@@ -132,7 +135,7 @@ const modules = [
                             :size="20"
                             :class="
                                 lowRecoveryCodes
-                                    ? 'text-gold-700'
+                                    ? 'text-accent-700'
                                     : 'text-emerald-600'
                             "
                         >
@@ -156,7 +159,7 @@ const modules = [
                         </div>
                     </div>
                     <div class="flex items-start gap-3">
-                        <ElIcon :size="20" class="text-crest-600"
+                        <ElIcon :size="20" class="text-brand-600"
                             ><Lock
                         /></ElIcon>
                         <div>
@@ -192,7 +195,7 @@ const modules = [
             <ElCard shadow="never" class="lg:col-span-2">
                 <template #header>
                     <div class="flex items-center justify-between">
-                        <h2 class="font-bold text-crest-900">Modules</h2>
+                        <h2 class="font-bold text-brand-900">Modules</h2>
                         <ElTag type="info" effect="plain" round
                             >Phase 2 rollout</ElTag
                         >
@@ -205,7 +208,7 @@ const modules = [
                         class="flex gap-4 rounded-xl border border-dashed border-slate-300 p-4"
                     >
                         <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-crest-50 text-crest-600"
+                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"
                         >
                             <ElIcon :size="20"
                                 ><component :is="module.icon"

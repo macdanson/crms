@@ -80,12 +80,12 @@ function handleUserCommand(command: string): void {
     <div class="flex min-h-svh bg-surface">
         <!-- Desktop sidebar -->
         <aside
-            class="sticky top-0 hidden h-svh w-64 shrink-0 flex-col bg-crest-900 text-white lg:flex"
+            class="sticky top-0 hidden h-svh w-64 shrink-0 flex-col bg-brand-900 text-white lg:flex"
         >
             <div class="flex h-16 items-center border-b border-white/10 px-5">
                 <AppLogo reversed size="sm" :show-descriptor="false" />
                 <span
-                    class="ml-3 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-gold-500 uppercase"
+                    class="ml-3 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-accent-500 uppercase"
                     >Restricted</span
                 >
             </div>
@@ -130,9 +130,13 @@ function handleUserCommand(command: string): void {
                 </ElMenu>
             </nav>
             <div
-                class="border-t border-white/10 px-5 py-4 text-[11px] text-crest-300"
+                class="border-t border-white/10 px-5 py-4 text-[11px] text-brand-300"
             >
-                {{ product.organisation }} · {{ product.motto }}
+                {{
+                    [product.organisation, product.tagline]
+                        .filter(Boolean)
+                        .join(' · ')
+                }}
             </div>
         </aside>
 
@@ -144,7 +148,7 @@ function handleUserCommand(command: string): void {
             :with-header="false"
             class="crms-drawer"
         >
-            <div class="flex h-full flex-col bg-crest-900 text-white">
+            <div class="flex h-full flex-col bg-brand-900 text-white">
                 <div
                     class="flex h-16 items-center border-b border-white/10 px-5"
                 >
@@ -181,7 +185,7 @@ function handleUserCommand(command: string): void {
 
         <div class="flex min-w-0 flex-1 flex-col">
             <div
-                class="bg-crest-950 px-4 py-1 text-center text-[11px] font-medium tracking-wide text-crest-200"
+                class="bg-brand-950 px-4 py-1 text-center text-[11px] font-medium tracking-wide text-brand-200"
             >
                 Authorised use only · Activity is recorded and audited
             </div>
@@ -190,7 +194,7 @@ function handleUserCommand(command: string): void {
             >
                 <button
                     type="button"
-                    class="flex size-10 items-center justify-center rounded-md text-crest-900 hover:bg-crest-50 lg:hidden"
+                    class="flex size-10 items-center justify-center rounded-md text-brand-900 hover:bg-brand-50 lg:hidden"
                     aria-label="Open navigation"
                     @click="drawerOpen = true"
                 >
@@ -210,7 +214,7 @@ function handleUserCommand(command: string): void {
                         >
                             <ElAvatar
                                 :size="34"
-                                class="!bg-crest-600 font-semibold"
+                                class="!bg-brand-600 font-semibold"
                                 >{{ user.initials }}</ElAvatar
                             >
                             <span class="hidden leading-tight sm:block">
@@ -219,11 +223,11 @@ function handleUserCommand(command: string): void {
                                     >{{ user.name }}</span
                                 >
                                 <span class="block text-xs text-slate-500">
-                                    {{ user.rank ?? 'Officer' }}
-                                    <template v-if="user.service_number">
+                                    {{ user.job_title ?? 'User' }}
+                                    <template v-if="user.staff_number">
                                         ·
                                         <span class="crms-code">{{
-                                            user.service_number
+                                            user.staff_number
                                         }}</span>
                                     </template>
                                 </span>
@@ -286,7 +290,7 @@ function handleUserCommand(command: string): void {
 
 .crms-nav :deep(.el-menu-item.is-active) {
     background-color: rgb(255 255 255 / 0.12);
-    box-shadow: inset 3px 0 0 var(--color-gold-500);
+    box-shadow: inset 3px 0 0 var(--color-accent-500);
 }
 
 .crms-nav :deep(.el-menu-item.is-disabled) {
@@ -294,7 +298,7 @@ function handleUserCommand(command: string): void {
 }
 
 .crms-nav :deep(.el-menu-item-group__title) {
-    color: var(--color-crest-400);
+    color: var(--color-brand-400);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.12em;

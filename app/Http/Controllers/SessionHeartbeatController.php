@@ -6,7 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Called by the browser while the officer is actively working on a page that
+ * Called by the browser while the user is actively working on a page that
  * makes no other requests (e.g. a long form), or when they choose "Stay signed
  * in". The EnforceSessionTimeouts middleware records the activity.
  */

@@ -8,9 +8,9 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('officer:suspend {email} {--reason= : Why access is being withdrawn}')]
-#[Description('Suspend an officer account and sign out all of its sessions immediately')]
-class SuspendOfficer extends Command
+#[Signature('user:reset-mfa {email}')]
+#[Description('Clear a user\'s authenticator (e.g. lost phone) so they must enrol again at next sign-in')]
+class ResetUserTwoFactor extends Command
 {
     /**
      * Execute the console command.
@@ -25,17 +25,13 @@ class SuspendOfficer extends Command
             return self::FAILURE;
         }
 
-        $reason = (string) ($this->option('reason') ?: $this->ask('Reason for suspension'));
-
-        if (trim($reason) === '') {
-            $this->components->error('A reason is required.');
-
+        if (! $this->confirm("Reset the authenticator for {$user->email}? Their sessions will be signed out.", true)) {
             return self::FAILURE;
         }
 
-        $accounts->suspend($user, $reason);
+        $accounts->resetTwoFactor($user, actor: null);
 
-        $this->components->info("{$user->email} has been suspended.");
+        $this->components->info('Authenticator cleared. The user will be asked to enrol again at next sign-in.');
 
         return self::SUCCESS;
     }

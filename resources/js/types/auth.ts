@@ -1,13 +1,13 @@
 /**
- * The minimal officer profile shared with every page. Secrets and
+ * The minimal user profile shared with every page. Secrets and
  * operational data are never included.
  */
 export type User = {
     id: number;
     name: string;
     email: string;
-    rank: string | null;
-    service_number: string | null;
+    job_title: string | null;
+    staff_number: string | null;
     initials: string;
     two_factor_enabled: boolean;
 };
@@ -17,7 +17,7 @@ export type Auth = {
 };
 
 export type SessionPolicy = {
-    /** Seconds of inactivity before the server signs the officer out. */
+    /** Seconds of inactivity before the server signs the user out. */
     idle_timeout: number;
     /** Seconds of warning shown before an idle sign-out. */
     idle_warning: number;
@@ -31,7 +31,8 @@ export type Flash = {
 export type Product = {
     short_name: string;
     full_name: string;
-    organisation: string;
-    motto: string;
+    /** Optional: the operating organisation, when configured. */
+    organisation: string | null;
+    tagline: string;
     support_contact: string;
 };

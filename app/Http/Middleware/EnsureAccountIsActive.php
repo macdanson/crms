@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Ends the session of an officer whose account is no longer active, so a
+ * Ends the session of a user whose account is no longer active, so a
  * suspension takes effect on the very next request (developer guide §25.2 #5).
  */
 class EnsureAccountIsActive

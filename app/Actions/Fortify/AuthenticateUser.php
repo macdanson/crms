@@ -13,7 +13,7 @@ use Illuminate\Support\Timebox;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Verifies officer credentials for Fortify's login pipeline.
+ * Verifies user credentials for Fortify's login pipeline.
  *
  * Unknown emails and wrong passwords take the same time and return the same
  * generic error. Only once the password is proven correct do we reveal that

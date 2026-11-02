@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
      * Seed the application's database with synthetic data.
      *
      * Demo credentials are only ever created in local development; production
-     * accounts must be provisioned individually with `php artisan officer:invite`.
+     * accounts must be provisioned individually with `php artisan user:invite`.
      */
     public function run(): void
     {
@@ -25,12 +25,12 @@ class DatabaseSeeder extends Seeder
         }
 
         User::factory()->create([
-            'name' => 'Demo Officer',
-            'email' => 'officer@crms.test',
-            'service_number' => 'DEMO-000001',
-            'rank' => 'Inspector of Police',
+            'name' => 'Demo Analyst',
+            'email' => 'analyst@crms.test',
+            'staff_number' => 'DEMO-000001',
+            'job_title' => 'Senior Crime Analyst',
         ]);
 
-        $this->command?->info('Demo officer: officer@crms.test / '.UserFactory::PASSWORD.' (authenticator enrolment required at first sign-in)');
+        $this->command?->info('Demo account: analyst@crms.test / '.UserFactory::PASSWORD.' (authenticator enrolment required at first sign-in)');
     }
 }
