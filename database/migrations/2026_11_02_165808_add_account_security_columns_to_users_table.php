@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\AccountStatus;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -21,6 +23,11 @@ return new class extends Migration
             $table->timestamp('suspended_at')->nullable();
             $table->string('suspension_reason')->nullable();
         });
+
+        // New accounts start as pending, but accounts that already exist were
+        // usable before this migration and have no invitation to activate
+        // with. Keep them active; they must still enrol an authenticator.
+        DB::table('users')->update(['status' => AccountStatus::Active->value]);
     }
 
     /**

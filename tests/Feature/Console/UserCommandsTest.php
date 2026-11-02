@@ -53,13 +53,14 @@ it('reactivates a suspended user but not a pending one', function () {
 });
 
 it('resets a user’s authenticator', function () {
-    $user = User::factory()->withTwoFactor()->create();
+    $user = User::factory()->withTwoFactor()->create(['remember_token' => 'old-remember-token']);
 
     $this->artisan('user:reset-mfa', ['email' => $user->email])
         ->expectsConfirmation("Reset the authenticator for {$user->email}? Their sessions will be signed out.", 'yes')
         ->assertSuccessful();
 
-    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse()
+        ->and($user->fresh()->remember_token)->not->toBe('old-remember-token');
 });
 
 it('reports an unknown user email', function () {

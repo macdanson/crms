@@ -11,6 +11,17 @@ import { heartbeat } from '@/routes/session';
  * server informed while the user is actively working on a page that makes
  * no requests, warns before an idle sign-out, and keeps open tabs in sync.
  */
+/**
+ * How long to wait before retrying a heartbeat that failed for a temporary
+ * reason (network blip, throttling, server error).
+ */
+const HEARTBEAT_RETRY_DELAY_MS = 30_000;
+
+/**
+ * Responses meaning the server-side session has really ended.
+ */
+const SESSION_ENDED_STATUSES = [401, 419];
+
 export function useIdleTimeout() {
     const page = usePage();
     const http = useHttp({});
@@ -29,6 +40,8 @@ export function useIdleTimeout() {
     let channel: BroadcastChannel | undefined;
     let removeFinishListener: (() => void) | undefined;
     let expiring = false;
+    let heartbeatInFlight = false;
+    let nextHeartbeatAllowedAt = 0;
 
     const activityEvents = [
         'pointerdown',
@@ -50,13 +63,38 @@ export function useIdleTimeout() {
         lastUserActivity = Date.now();
     }
 
+    function canSendHeartbeat(): boolean {
+        return !heartbeatInFlight && Date.now() >= nextHeartbeatAllowedAt;
+    }
+
     async function sendHeartbeat(): Promise<void> {
+        if (!canSendHeartbeat()) {
+            return;
+        }
+
+        heartbeatInFlight = true;
+
         try {
             await http.post(heartbeat.url());
             recordServerContact();
-        } catch {
-            // The session has already ended on the server.
-            expire();
+        } catch (error) {
+            const status = (error as { response?: { status?: number } })
+                ?.response?.status;
+
+            if (
+                status !== undefined &&
+                SESSION_ENDED_STATUSES.includes(status)
+            ) {
+                expire();
+
+                return;
+            }
+
+            // The session is still valid; a temporary failure must not cost
+            // the user their unsaved work. Try again shortly.
+            nextHeartbeatAllowedAt = Date.now() + HEARTBEAT_RETRY_DELAY_MS;
+        } finally {
+            heartbeatInFlight = false;
         }
     }
 
@@ -95,7 +133,8 @@ export function useIdleTimeout() {
         if (
             lastUserActivity > lastServerContact &&
             sinceContact >= idleTimeout.value / 3 &&
-            !showWarning.value
+            !showWarning.value &&
+            canSendHeartbeat()
         ) {
             void sendHeartbeat();
 

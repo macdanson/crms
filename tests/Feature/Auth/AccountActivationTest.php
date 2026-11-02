@@ -7,6 +7,7 @@ use App\Notifications\AccountInvitation;
 use App\Services\AccountLifecycle;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 
@@ -114,3 +115,34 @@ it('refuses to re-invite an account that is already active', function () {
 
     app(AccountLifecycle::class)->invite(['name' => $user->name, 'email' => $user->email]);
 })->throws(ValidationException::class, 'An account with this email address has already been activated.');
+
+it('keeps the activation link working after someone requests a password reset', function () {
+    [$user, $token] = inviteUser();
+
+    // Past the reset broker's one-minute throttle, so a reset link is issued.
+    $this->travel(2)->minutes();
+    $this->post(route('password.email'), ['email' => $user->email]);
+
+    $this->post(route('activation.store'), [
+        'token' => $token,
+        'email' => $user->email,
+        'password' => 'Activation-Pass-2026!',
+        'password_confirmation' => 'Activation-Pass-2026!',
+    ])->assertSessionHasNoErrors();
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Active);
+});
+
+it('does not accept a password reset token as an activation link', function () {
+    [$user] = inviteUser();
+    $resetToken = Password::broker()->createToken($user);
+
+    $this->post(route('activation.store'), [
+        'token' => $resetToken,
+        'email' => $user->email,
+        'password' => 'Activation-Pass-2026!',
+        'password_confirmation' => 'Activation-Pass-2026!',
+    ])->assertSessionHasErrors('email');
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Pending);
+});

@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { ElButton } from 'element-plus';
 import { computed } from 'vue';
 import AppLogoMark from '@/components/AppLogoMark.vue';
 import { home } from '@/routes';
 
+/**
+ * Rendered by the exception handler. Shared props are absent when no route
+ * matched (e.g. a 404), so everything the page needs arrives as page props.
+ */
 const props = defineProps<{
     status: number;
+    productName: string;
 }>();
-
-const page = usePage();
 
 const content = computed(
     () =>
@@ -58,7 +61,7 @@ const content = computed(
             </p>
             <Link :href="home.url()">
                 <ElButton type="primary" class="mt-8">
-                    Return to {{ page.props.product.short_name }}
+                    Return to {{ productName }}
                 </ElButton>
             </Link>
         </div>

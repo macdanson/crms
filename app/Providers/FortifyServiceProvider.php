@@ -9,6 +9,7 @@ use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Http\Responses\LogoutResponse;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
+use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -24,6 +25,11 @@ use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
 {
+    /**
+     * Request attribute holding the result of the credential check.
+     */
+    private const AUTHENTICATED_USER = 'crms.authenticated_user';
+
     /**
      * Register any application services.
      */
@@ -49,7 +55,19 @@ class FortifyServiceProvider extends ServiceProvider
 
     private function configureActions(): void
     {
-        Fortify::authenticateUsing(fn (Request $request) => app(AuthenticateUser::class)($request));
+        Fortify::authenticateUsing(function (Request $request): ?User {
+            // CRMS never issues long-lived "remember me" cookies: one would let
+            // its holder skip both the password and the authenticator.
+            $request->merge(['remember' => false]);
+
+            // Fortify's pipeline asks for the user twice when no authenticator
+            // is confirmed; check the credentials (and hash the password) once.
+            if (! $request->attributes->has(self::AUTHENTICATED_USER)) {
+                $request->attributes->set(self::AUTHENTICATED_USER, app(AuthenticateUser::class)($request));
+            }
+
+            return $request->attributes->get(self::AUTHENTICATED_USER);
+        });
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::redirectUserForTwoFactorAuthenticationUsing(RedirectIfTwoFactorAuthenticatable::class);

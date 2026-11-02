@@ -184,3 +184,45 @@ it('replaces the authenticator and sends the user to re-enrol', function () {
 
     $this->get(route('dashboard'))->assertRedirect(route('two-factor.setup'));
 });
+
+it('keeps the user signed in on the next page after changing the password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('security.show'))
+        ->assertOk();
+
+    $this->put(route('user-password.update'), [
+        'current_password' => UserFactory::PASSWORD,
+        'password' => 'Changed-Password-2026!',
+        'password_confirmation' => 'Changed-Password-2026!',
+    ])->assertSessionHasNoErrors();
+
+    $this->get(route('security.show'))->assertOk();
+    $this->assertAuthenticatedAs($user);
+});
+
+it('returns to the page an action came from after confirming the password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->from(route('security.show'))
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('password.confirm'));
+
+    $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('security.show'));
+});
+
+it('never returns to another site after confirming the password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withHeader('referer', 'https://attacker.example/page')
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('password.confirm'));
+
+    $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('dashboard'));
+});

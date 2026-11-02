@@ -5,6 +5,7 @@ use App\Http\Middleware\EnforceSessionTimeouts;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureTwoFactorIsEnrolled;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RequirePasswordConfirmation;
 use App\Http\Middleware\SetSecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -33,17 +34,23 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'mfa' => EnsureTwoFactorIsEnrolled::class,
+            'password.confirm' => RequirePasswordConfirmation::class,
         ]);
 
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*') || ($request->expectsJson() && ! $request->header('X-Inertia')),
-        );
+        $wantsJson = fn (Request $request): bool => $request->is('api/*')
+            || ($request->expectsJson() && ! $request->header('X-Inertia'));
 
-        $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
+        $exceptions->shouldRenderJsonWhen($wantsJson);
+
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) use ($wantsJson): Response {
+            if ($wantsJson($request)) {
+                return $response;
+            }
+
             $status = $response->getStatusCode();
 
             // An expired CSRF token usually means the session timed out.
@@ -56,7 +63,10 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if (! app()->hasDebugModeEnabled() && in_array($status, [403, 404, 429, 500, 503], true)) {
-                return Inertia::render('Error', ['status' => $status])
+                return Inertia::render('Error', [
+                    'status' => $status,
+                    'productName' => config('crms.product.short_name'),
+                ])
                     ->toResponse($request)
                     ->setStatusCode($status);
             }

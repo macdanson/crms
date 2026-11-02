@@ -36,7 +36,13 @@ class EnsureAccountIsActive
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            return redirect()->route('login')->with('status', 'Your session has ended because your account is no longer active.');
+            $message = 'Your session has ended because your account is no longer active.';
+
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                return response()->json(['message' => $message], 401);
+            }
+
+            return redirect()->route('login')->with('status', $message);
         }
 
         return $next($request);

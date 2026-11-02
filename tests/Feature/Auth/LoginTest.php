@@ -1,10 +1,12 @@
 <?php
 
+use App\Actions\Fortify\AuthenticateUser;
 use App\Enums\AuditOutcome;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\NewDeviceSignIn;
 use Database\Factories\UserFactory;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia;
 
@@ -164,4 +166,42 @@ it('signs the user out and records it', function () {
 
     $this->assertGuest();
     expect(AuditEvent::where('event', 'auth.logout')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('checks the credentials only once per sign-in', function () {
+    $user = User::factory()->create();
+
+    $this->mock(AuthenticateUser::class)
+        ->shouldReceive('__invoke')
+        ->once()
+        ->andReturn($user);
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => UserFactory::PASSWORD,
+    ]);
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('never issues a remember-me cookie', function () {
+    $user = User::factory()->create();
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => UserFactory::PASSWORD,
+        'remember' => '1',
+    ])->assertCookieMissing(Auth::guard('web')->getRecallerName());
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('does not carry remember-me into the two-factor challenge', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => UserFactory::PASSWORD,
+        'remember' => '1',
+    ])->assertSessionHas('login.remember', false);
 });

@@ -100,10 +100,11 @@ return [
             'throttle' => 60,
         ],
 
-        // Account activation links sent to newly provisioned users.
+        // Account activation links sent to newly provisioned users. They use
+        // their own table so they never collide with password reset tokens.
         'invitations' => [
             'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'table' => 'account_activation_tokens',
             'expire' => (int) env('CRMS_ACTIVATION_EXPIRE', 4320),
             'throttle' => 0,
         ],

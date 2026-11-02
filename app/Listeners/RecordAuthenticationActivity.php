@@ -15,6 +15,7 @@ use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\OtherDeviceLogout;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Events\PasswordUpdatedViaController;
 use Laravel\Fortify\Events\RecoveryCodeReplaced;
@@ -64,7 +65,10 @@ class RecordAuthenticationActivity
 
             // The user has just proven their password; avoid asking again
             // straight away (e.g. during mandatory authenticator enrolment).
-            $request->session()->passwordConfirmed();
+            // A sign-in restored from a cookie proves nothing, so it does not count.
+            if (! Auth::guard($event->guard)->viaRemember()) {
+                $request->session()->passwordConfirmed();
+            }
         }
 
         $this->notifyIfNewDevice($user, (string) $request->userAgent(), $request->ip());

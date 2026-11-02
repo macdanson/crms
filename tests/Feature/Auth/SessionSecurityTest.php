@@ -83,3 +83,12 @@ it('deletes a suspended user’s stored sessions immediately', function () {
 
     expect(DB::table('sessions')->where('user_id', $user->id)->count())->toBe(0);
 });
+
+it('returns 401 JSON to the heartbeat of a suspended account', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $user->forceFill(['status' => 'suspended'])->save();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+});
