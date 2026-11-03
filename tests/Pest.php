@@ -48,6 +48,15 @@ expect()->extend('toBeOne', function () {
 */
 
 /**
+ * Move the clock to just after the start of an attempt-limit window, so a
+ * test that moves time forward stays inside one window.
+ */
+function startAttemptWindow(): void
+{
+    test()->travelTo(now()->startOfDay()->addSecond());
+}
+
+/**
  * The code the user's authenticator app shows right now.
  */
 function currentAuthenticatorCode(User $user): string

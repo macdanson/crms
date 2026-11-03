@@ -7,7 +7,6 @@ use App\Enums\AuditOutcome;
 use App\Models\User;
 use App\Notifications\SignInCodesLocked;
 use Closure;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -48,7 +47,12 @@ class SecondFactorCheck
      */
     public function attempt(User $user, string $where, string $field, Closure $check): bool
     {
-        $result = $this->limiter->attempt($where, $user, $check);
+        $result = $this->limiter->attempt(
+            $where,
+            $user,
+            $check,
+            onLock: $where === self::AT_SIGN_IN ? fn () => $this->alert($user) : null,
+        );
 
         if ($result !== AttemptResult::Locked) {
             return $result === AttemptResult::Passed;
@@ -58,14 +62,18 @@ class SecondFactorCheck
             'step' => $where === self::AT_SIGN_IN ? 'sign_in' : 'settings',
         ]);
 
-        // Someone who reached the code step at sign-in knows the password.
-        // Tell the user once per lock.
-        if ($where === self::AT_SIGN_IN && Cache::add('crms.sign-in-codes-locked.'.$user->getKey(), true, AccountAttemptLimiter::DECAY_SECONDS)) {
-            $user->notify(new SignInCodesLocked);
-        }
-
         throw ValidationException::withMessages([
-            $field => $this->limiter->lockedMessage($where, $user, 'codes'),
+            $field => $this->limiter->lockedMessage('codes'),
         ]);
+    }
+
+    /**
+     * Someone who reached the code step at sign-in knows the password, so
+     * tell the user. Sending the alert must never turn the lock into an
+     * error; a failure is reported instead.
+     */
+    private function alert(User $user): void
+    {
+        rescue(fn () => $user->notify(new SignInCodesLocked($this->limiter->minutesUntilUnlocked())), report: true);
     }
 }

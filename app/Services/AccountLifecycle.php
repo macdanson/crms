@@ -230,6 +230,9 @@ class AccountLifecycle
      * before the account is marked as invited again (claimPendingAccount),
      * then update the account if it is still pending.
      *
+     * The account row is locked before the link is touched: activation locks
+     * the account and then the link too, so the two cannot deadlock.
+     *
      * @param  array<string, mixed>  $details
      * @return string The new activation token.
      *
@@ -237,6 +240,8 @@ class AccountLifecycle
      */
     private function reinvitePendingAccount(User $user, array $details): string
     {
+        User::query()->whereKey($user->getKey())->lockForUpdate()->value('id');
+
         $token = $this->invitationBroker()->createToken($user);
 
         if (! $this->updatePendingAccount($user, $details)) {

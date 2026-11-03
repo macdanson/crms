@@ -7,12 +7,13 @@ use App\Notifications\SignInCodesLocked;
 use App\Services\AccountAttemptLimiter;
 use App\Services\AccountLifecycle;
 use App\Services\SecondFactor;
+use App\Services\SecondFactorCheck;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
@@ -274,6 +275,7 @@ it('sends a refused Inertia DELETE back with GET', function () {
 });
 
 it('locks authenticator code checks after five wrong codes', function () {
+    startAttemptWindow();
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
@@ -371,6 +373,7 @@ it('accepts a valid recovery code however often other codes change while it is u
 });
 
 it('locks the sign-in challenge per account after five wrong codes, however often it is restarted', function () {
+    startAttemptWindow();
     $user = User::factory()->withTwoFactor()->create();
 
     foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
@@ -438,7 +441,7 @@ it('asks the user to try again, without counting a guess, when the codes keep ch
         ->postJson(route('security.second-factor.confirm'), ['recovery_code' => $recoveryCode])
         ->assertJsonValidationErrors(['recovery_code' => 'Please try again']);
 
-    expect(RateLimiter::attempts('second-factor-check:'.$user->id))->toBe(0)
+    expect(app(AccountAttemptLimiter::class)->attempts(SecondFactorCheck::IN_SETTINGS, $user))->toBe(0)
         ->and(AuditEvent::where('event', 'mfa.step_up.failed')->exists())->toBeFalse();
 });
 
@@ -449,6 +452,7 @@ it('refuses to replace a recovery code that is not one of the user\'s', function
 });
 
 it('keeps code checks in settings working, and tells the user, when sign-in codes are locked', function () {
+    startAttemptWindow();
     Notification::fake();
     $user = User::factory()->withTwoFactor()->create();
 
@@ -476,4 +480,70 @@ it('records that a recovery code was the proof for replacing the authenticator',
         ->assertRedirect(route('two-factor.setup'));
 
     expect(AuditEvent::where('event', 'mfa.reset')->sole()->context)->toMatchArray(['proof' => 'recovery_code']);
+});
+
+/**
+ * Gives wrong codes at the sign-in challenge; by default enough to lock it.
+ */
+function lockSignInCodes(User $user, int $wrongCodes = AccountAttemptLimiter::MAX_ATTEMPTS + 1): void
+{
+    foreach (range(1, $wrongCodes) as $attempt) {
+        startTwoFactorLogin($user);
+        test()->post(route('two-factor.login.store'), ['code' => '000000']);
+        test()->travel(13)->seconds(); // stay under the challenge's 5-a-minute throttle
+    }
+}
+
+it('alerts the user for each new lock, with the time actually left', function () {
+    Notification::fake();
+    $user = User::factory()->withTwoFactor()->create();
+
+    startAttemptWindow();
+    $this->travel(13)->minutes();
+    lockSignInCodes($user);
+
+    $this->travel(2)->minutes(); // the next window
+    lockSignInCodes($user);
+
+    Notification::assertSentToTimes($user, SignInCodesLocked::class, 2);
+    Notification::assertSentTo($user, SignInCodesLocked::class, fn (SignInCodesLocked $notification): bool => $notification->minutes === 1);
+});
+
+it('still answers a locked sign-in normally when the alert cannot be sent', function () {
+    $this->mock(NotificationDispatcher::class)
+        ->shouldReceive('send')
+        ->andThrow(new RuntimeException('Mail server unavailable'));
+    $user = User::factory()->withTwoFactor()->create();
+
+    startAttemptWindow();
+    lockSignInCodes($user, AccountAttemptLimiter::MAX_ATTEMPTS);
+
+    // This guess reaches the limit, so it is the one that sends the alert.
+    startTwoFactorLogin($user);
+    $this->post(route('two-factor.login.store'), ['code' => '000000'])
+        ->assertSessionHasErrors(['code' => 'Too many incorrect codes. Try again in 14 minutes.']);
+});
+
+it('treats unreadable stored recovery codes as no codes, not as an error', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $user->forceFill(['two_factor_recovery_codes' => Fortify::currentEncrypter()->encrypt('null')])->save();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('security.second-factor.confirm'), ['recovery_code' => 'abcdefghij-klmnopqrst'])
+        ->assertJsonValidationErrors(['recovery_code' => 'That recovery code is not valid.']);
+});
+
+it('signs in with a correct authenticator code even if a recovery code was also sent', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    startTwoFactorLogin($user);
+
+    $this->post(route('two-factor.login.store'), [
+        'code' => currentAuthenticatorCode($user),
+        'recovery_code' => $recoveryCode,
+    ])->assertRedirect(route('dashboard'));
+
+    expect($user->fresh()->recoveryCodes())->toContain($recoveryCode);
 });

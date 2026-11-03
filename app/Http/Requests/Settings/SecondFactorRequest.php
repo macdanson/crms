@@ -65,7 +65,7 @@ class SecondFactorRequest extends FormRequest
     protected function passedValidation(): void
     {
         $user = $this->challengedUser();
-        $field = $this->filled('recovery_code') ? 'recovery_code' : 'code';
+        $field = $this->proofField();
 
         if (app(SecondFactorCheck::class)->attempt($user, SecondFactorCheck::IN_SETTINGS, $field, fn (): bool => $this->checkProof())) {
             return;
@@ -85,7 +85,17 @@ class SecondFactorRequest extends FormRequest
      */
     public function proofMethod(): string
     {
-        return $this->filled('recovery_code') ? 'recovery_code' : 'authenticator';
+        return $this->proofField() === 'recovery_code' ? 'recovery_code' : 'authenticator';
+    }
+
+    /**
+     * The input the proof was given in. The one place that decides it.
+     *
+     * @return 'recovery_code'|'code'
+     */
+    protected function proofField(): string
+    {
+        return $this->filled('recovery_code') ? 'recovery_code' : 'code';
     }
 
     /**
@@ -121,7 +131,7 @@ class SecondFactorRequest extends FormRequest
     {
         $secondFactor = app(SecondFactor::class);
 
-        if ($this->filled('recovery_code')) {
+        if ($this->proofField() === 'recovery_code') {
             $recoveryCode = $this->string('recovery_code')->toString();
 
             return $this->usesUpRecoveryCode()

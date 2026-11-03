@@ -83,9 +83,14 @@ class SecondFactor
     {
         for ($attempt = 0; $attempt < self::MAX_SWAP_ATTEMPTS; $attempt++) {
             $stored = $this->storedCodes($user);
-            $usedCode = $stored === null ? null : $this->matchingCode($stored['codes'], $recoveryCode);
 
-            if ($stored === null || $usedCode === null) {
+            if ($stored === null) {
+                return false;
+            }
+
+            $usedCode = $this->matchingCode($stored['codes'], $recoveryCode);
+
+            if ($usedCode === null) {
                 return false;
             }
 
@@ -120,16 +125,20 @@ class SecondFactor
      */
     private function storedCodes(User $user): ?array
     {
-        $fresh = User::query()->select(['id', 'two_factor_recovery_codes'])->whereKey($user->getKey())->first();
-        $encrypted = $fresh?->getRawOriginal('two_factor_recovery_codes');
+        $encrypted = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
 
-        if (! $fresh instanceof User || ! is_string($encrypted)) {
+        if (! is_string($encrypted)) {
             return null;
         }
 
+        // Decoded as Fortify stores them. Fortify's recoveryCodes() is not used
+        // because it assumes the value is a JSON list; anything else is
+        // treated here as no codes rather than an error.
+        $codes = json_decode(Fortify::currentEncrypter()->decrypt($encrypted), true);
+
         return [
             'encrypted' => $encrypted,
-            'codes' => array_values(array_filter($fresh->recoveryCodes(), is_string(...))),
+            'codes' => is_array($codes) ? array_values(array_filter($codes, is_string(...))) : [],
         ];
     }
 

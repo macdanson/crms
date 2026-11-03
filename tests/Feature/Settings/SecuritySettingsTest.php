@@ -9,7 +9,6 @@ use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Testing\AssertableInertia;
 
 /**
@@ -423,6 +422,7 @@ it('sends an Inertia DELETE that needs password confirmation on with GET', funct
 });
 
 it('says one minute, not one minutes, near the end of a lock', function () {
+    startAttemptWindow();
     $user = User::factory()->create();
     $limiter = app(AccountAttemptLimiter::class);
 
@@ -432,7 +432,7 @@ it('says one minute, not one minutes, near the end of a lock', function () {
 
     $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 30)->seconds();
 
-    expect($limiter->lockedMessage('password', $user, 'passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
+    expect($limiter->lockedMessage('passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
 });
 
 it('keeps counting wrong guesses made elsewhere after a right guess', function () {
@@ -458,11 +458,27 @@ it('never counts below zero when the window ends during a check', function () {
         return true;
     });
 
-    expect(RateLimiter::attempts('password-check:'.$user->id))->toBe(0);
+    expect($limiter->attempts('password', $user))->toBe(0);
 
     foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
         $limiter->attempt('password', $user, fn (): bool => false);
     }
 
     expect($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Locked);
+});
+
+it('never takes back a guess counted in a later window', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    // A right guess is still being checked when its window ends, and a wrong
+    // guess from somewhere else opens the next window.
+    $limiter->attempt('password', $user, function () use ($limiter, $user): bool {
+        $this->travel(AccountAttemptLimiter::DECAY_SECONDS)->seconds();
+        $limiter->attempt('password', $user, fn (): bool => false);
+
+        return true;
+    });
+
+    expect($limiter->attempts('password', $user))->toBe(1);
 });

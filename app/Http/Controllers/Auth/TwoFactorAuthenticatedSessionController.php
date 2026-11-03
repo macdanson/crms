@@ -14,9 +14,13 @@ use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLogin
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Fortify's sign-in challenge, except that a recovery code is used up once,
- * atomically, while it is checked (TwoFactorLoginRequest::validRecoveryCode).
- * Fortify's own store() would replace the code a second time afterwards.
+ * Fortify's sign-in challenge, except that:
+ *
+ * - a recovery code is used up once, atomically, while it is checked
+ *   (TwoFactorLoginRequest::validRecoveryCode); Fortify's own store() would
+ *   replace it a second time afterwards;
+ * - an authenticator code is checked first, so a recovery code sent with a
+ *   correct authenticator code is not used up.
  */
 class TwoFactorAuthenticatedSessionController extends FortifyTwoFactorAuthenticatedSessionController
 {
@@ -27,9 +31,8 @@ class TwoFactorAuthenticatedSessionController extends FortifyTwoFactorAuthentica
     {
         $user = $request->challengedUser();
 
-        $passed = $request->filled('recovery_code')
-            ? $request->validRecoveryCode() !== null
-            : $request->hasValidCode();
+        $passed = $request->hasValidCode()
+            || ($request->filled('recovery_code') && $request->validRecoveryCode() !== null);
 
         if (! $passed) {
             event(new TwoFactorAuthenticationFailed($user));

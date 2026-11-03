@@ -20,11 +20,12 @@ class ResetUserPassword implements ResetsUserPasswords
     /**
      * A reset proves control of the email address, so a pending account
      * becomes active. Decided in one conditional update, so a suspension
-     * made meanwhile is never undone.
+     * made meanwhile is never undone. The account is then reloaded either
+     * way, so nothing later works with a status that has changed.
      */
     private function activateIfStillPending(User $user): void
     {
-        $activated = User::query()
+        User::query()
             ->whereKey($user->getKey())
             ->where('status', AccountStatus::Pending)
             ->update([
@@ -33,9 +34,7 @@ class ResetUserPassword implements ResetsUserPasswords
                 'updated_at' => now(),
             ]);
 
-        if ($activated === 1) {
-            $user->refresh();
-        }
+        $user->refresh();
     }
 
     /**
@@ -61,7 +60,9 @@ class ResetUserPassword implements ResetsUserPasswords
                 'password_changed_at' => now(),
             ])->save();
 
-            $this->activateIfStillPending($user);
+            if ($user->isPending()) {
+                $this->activateIfStillPending($user);
+            }
 
             $this->policy->endOtherSessions($user);
         });
