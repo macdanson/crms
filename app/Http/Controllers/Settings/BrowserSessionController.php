@@ -46,12 +46,8 @@ class BrowserSessionController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // The password was checked by RevokeOtherSessionsRequest. The stamp
-        // ends other sessions with any session driver; deleting the stored
-        // sessions (database driver only) also clears the session list.
-        $this->policy->endOtherSessions($user, $request->session());
-
-        $revoked = $this->sessions->revokeOthers($user, $request->session()->getId());
+        // The password was checked by RevokeOtherSessionsRequest.
+        $revoked = $this->policy->endOtherSessions($user, $request->session());
 
         $this->audit->record('auth.sessions.revoked_others', AuditOutcome::Success, $user, [
             'sessions_revoked' => $revoked,

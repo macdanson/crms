@@ -2,8 +2,12 @@
 
 namespace App\Http\Requests\Settings;
 
+use App\Models\User;
+use App\Services\PasswordCheck;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class RevokeOtherSessionsRequest extends FormRequest
 {
@@ -23,17 +27,38 @@ class RevokeOtherSessionsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'password' => ['required', 'string', 'current_password:web'],
+            'password' => ['required', 'string'],
         ];
     }
 
     /**
-     * @return array<string, string>
+     * The password is checked by PasswordCheck, which limits and audits
+     * wrong guesses.
+     *
+     * @return array<int, Closure(Validator): void>
      */
-    public function messages(): array
+    public function after(): array
     {
         return [
-            'password.current_password' => 'The password is incorrect.',
+            function (Validator $validator): void {
+                if ($validator->errors()->isNotEmpty()) {
+                    return;
+                }
+
+                /** @var User $user */
+                $user = $this->user();
+
+                $error = app(PasswordCheck::class)->check(
+                    $user,
+                    $this->string('password')->toString(),
+                    'revoke_other_sessions',
+                    'The password is incorrect.',
+                );
+
+                if ($error !== null) {
+                    $validator->errors()->add('password', $error);
+                }
+            },
         ];
     }
 }

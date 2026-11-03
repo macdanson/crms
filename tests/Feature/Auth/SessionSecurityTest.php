@@ -6,7 +6,9 @@ use App\Services\AccountLifecycle;
 use App\Services\SessionPolicy;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
 
 it('signs the user out after the idle timeout', function () {
@@ -242,4 +244,25 @@ it('keeps the session that ended the others even if an earlier request saves the
 
     expect($policy->isCurrent($keptSession, $user->fresh()))->toBeTrue()
         ->and($policy->isCurrent($otherSession, $user->fresh()))->toBeFalse();
+});
+
+it('sends a signed-in user back to try again after an expired form token', function () {
+    Route::post('_test/expired-token', fn () => throw new TokenMismatchException)->middleware('web');
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->from(route('dashboard'))
+        ->post('_test/expired-token')
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('error', 'This page had expired, so your last action was not saved. Please try again.');
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('sends a guest to sign in after an expired form token', function () {
+    Route::post('_test/expired-token', fn () => throw new TokenMismatchException)->middleware('web');
+
+    $this->post('_test/expired-token')
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('status', 'Your session expired. Please sign in again.');
 });

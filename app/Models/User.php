@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
+use App\Notifications\ResetPasswordLink;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -62,6 +63,16 @@ class User extends Authenticatable
     public static function normaliseEmail(string $email): string
     {
         return Str::lower(trim($email));
+    }
+
+    /**
+     * Send the password reset link (queued; see ResetPasswordLink).
+     *
+     * @param  string  $token
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordLink($token));
     }
 
     /**

@@ -323,3 +323,25 @@ it('replaces the authenticator with a recovery code when the phone is lost', fun
 
     expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
 });
+
+it('limits and audits wrong passwords given inside a signed-in session', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user);
+
+    foreach (range(1, 5) as $attempt) {
+        $this->post(route('password.confirm.store'), ['password' => 'Wrong-Password-1!'])
+            ->assertSessionHasErrors(['password' => 'The provided password was incorrect.']);
+    }
+
+    // Even the right password is refused once the limit is reached.
+    $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHasErrors('password');
+
+    $this->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHasErrors('password');
+
+    expect(AuditEvent::where('event', 'auth.password_check.failed')->where('user_id', $user->id)->count())->toBe(5)
+        ->and(AuditEvent::where('event', 'auth.password_check.locked')->where('user_id', $user->id)->exists())->toBeTrue();
+});

@@ -93,9 +93,22 @@ class BrowserSessions
         return $this->query($user)->delete();
     }
 
+    /**
+     * A keyed one-way hash of a session ID. The audit log, the kept-session
+     * marker and the public session IDs below all derive from it, so they
+     * stay linked.
+     */
+    public function sessionHash(string $sessionId): string
+    {
+        return hash_hmac('sha256', $sessionId, (string) config('app.key'));
+    }
+
+    /**
+     * The identifier the session list shows for a session.
+     */
     public function publicId(string $sessionId): string
     {
-        return substr(hash_hmac('sha256', $sessionId, (string) config('app.key')), 0, 40);
+        return substr($this->sessionHash($sessionId), 0, 40);
     }
 
     /**

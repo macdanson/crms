@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\TwoFactorSetupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SessionHeartbeatController;
 use App\Http\Controllers\Settings\BrowserSessionController;
+use App\Http\Controllers\Settings\SecondFactorConfirmationController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\TwoFactorResetController;
 use Illuminate\Support\Facades\Route;
@@ -50,6 +51,10 @@ Route::middleware('auth')->group(function () {
 
             Route::delete('sessions', [BrowserSessionController::class, 'destroyOthers'])
                 ->name('security.sessions.destroy-others');
+
+            Route::post('second-factor/confirm', SecondFactorConfirmationController::class)
+                ->middleware('throttle:5,1')
+                ->name('security.second-factor.confirm');
 
             Route::post('two-factor/reset', TwoFactorResetController::class)
                 ->middleware('throttle:5,1')

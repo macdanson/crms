@@ -134,11 +134,7 @@ class RecordAuthenticationActivity
         $user = $event->user;
         $session = request()->hasSession() ? request()->session() : null;
 
-        $this->policy->endOtherSessions($user, $session);
-
-        $revoked = $session !== null
-            ? $this->sessions->revokeOthers($user, $session->getId())
-            : $this->sessions->revokeAll($user);
+        $revoked = $this->policy->endOtherSessions($user, $session);
 
         $this->audit->record('auth.password.changed', AuditOutcome::Success, $user, [
             'sessions_revoked' => $revoked,

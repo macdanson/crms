@@ -24,6 +24,8 @@ class SessionPolicy
 
     public const STAMP = 'crms.session_stamp';
 
+    public function __construct(private BrowserSessions $sessions) {}
+
     /**
      * Record a fresh sign-in.
      */
@@ -122,15 +124,26 @@ class SessionPolicy
 
     /**
      * End every session of the user except $keep, with any session driver.
+     * Stored sessions (database driver only) are also deleted, so they leave
+     * the session list. Returns how many stored sessions were deleted.
+     *
+     * Call it in the same database transaction as the change that requires
+     * it, so no other session sees the change before it has ended.
      */
-    public function endOtherSessions(User $user, ?Session $keep = null): void
+    public function endOtherSessions(User $user, ?Session $keep = null): int
     {
         $user->forceFill([
             'session_stamp' => Str::random(64),
             'session_stamp_holder' => $keep === null ? null : $this->holderHash($keep),
         ])->saveQuietly();
 
-        $keep?->put(self::STAMP, $user->session_stamp);
+        if ($keep === null) {
+            return $this->sessions->revokeAll($user);
+        }
+
+        $keep->put(self::STAMP, $user->session_stamp);
+
+        return $this->sessions->revokeOthers($user, $keep->getId());
     }
 
     /**
@@ -162,6 +175,6 @@ class SessionPolicy
      */
     private function holderHash(Session $session): string
     {
-        return hash_hmac('sha256', $session->getId(), (string) config('app.key'));
+        return $this->sessions->sessionHash($session->getId());
     }
 }

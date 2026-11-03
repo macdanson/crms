@@ -3,6 +3,8 @@
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountLifecycle;
+use App\Services\SecondFactor;
+use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Fortify;
@@ -119,7 +121,7 @@ it('does not let users switch off mandatory multi-factor authentication', functi
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)
-        ->withSession(['auth.password_confirmed_at' => time()])
+        ->withSession(['auth.password_confirmed_at' => time(), SecondFactor::CONFIRMED_AT => time()])
         ->delete(route('two-factor.disable'))
         ->assertSessionHasErrors(['two_factor' => 'Multi-factor authentication is mandatory and cannot be switched off.']);
 
@@ -152,4 +154,91 @@ it('does not finish signing in an account suspended after the password step', fu
     $this->assertGuest();
     expect(AuditEvent::where('event', 'auth.login')->exists())->toBeFalse()
         ->and(AuditEvent::where('event', 'auth.login.blocked')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('never shows the secret of a linked authenticator again', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+
+    $this->getJson(route('two-factor.secret-key'))->assertForbidden();
+    $this->getJson(route('two-factor.qr-code'))->assertForbidden();
+});
+
+it('shows recovery codes only after the user proves their authenticator', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+
+    $this->getJson(route('two-factor.recovery-codes'))
+        ->assertStatus(423)
+        ->assertJson(['second_factor_required' => true]);
+
+    $this->postJson(route('security.second-factor.confirm'), ['code' => '000000'])
+        ->assertJsonValidationErrors('code');
+
+    $this->postJson(route('security.second-factor.confirm'), ['code' => currentAuthenticatorCode($user)])
+        ->assertNoContent();
+
+    $this->getJson(route('two-factor.recovery-codes'))
+        ->assertOk()
+        ->assertJson($user->recoveryCodes());
+
+    expect(AuditEvent::where('event', 'mfa.step_up.failed')->count())->toBe(1)
+        ->and(AuditEvent::where('event', 'mfa.step_up.passed')->count())->toBe(1);
+});
+
+it('does not replace recovery codes without a recent proof of the authenticator', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $codes = $user->recoveryCodes();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('two-factor.regenerate-recovery-codes'))
+        ->assertSessionHas('error');
+
+    expect($user->fresh()->recoveryCodes())->toBe($codes);
+
+    $this->travel(SecondFactor::CONFIRMATION_SECONDS + 1)->seconds();
+    $this->withSession([SecondFactor::CONFIRMED_AT => now()->subSeconds(SecondFactor::CONFIRMATION_SECONDS)->getTimestamp()])
+        ->post(route('two-factor.regenerate-recovery-codes'))
+        ->assertSessionHas('error');
+
+    expect($user->fresh()->recoveryCodes())->toBe($codes);
+});
+
+it('uses up a recovery code given as proof', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.second-factor.confirm'), ['recovery_code' => $recoveryCode])
+        ->assertSessionHasNoErrors();
+
+    expect($user->fresh()->recoveryCodes())->not->toContain($recoveryCode);
+});
+
+it('switches optional multi-factor authentication off only after proof, and signs out other sessions', function () {
+    config(['crms.auth.require_mfa' => false]);
+    $user = User::factory()->withTwoFactor()->create();
+    $otherDeviceStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('two-factor.disable'))
+        ->assertSessionHas('error');
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeTrue();
+
+    $this->withSession([SecondFactor::CONFIRMED_AT => time()])
+        ->delete(route('two-factor.disable'))
+        ->assertSessionHasNoErrors();
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
+
+    $this->actingAs($user->fresh())
+        ->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
+        ->get(route('dashboard'))
+        ->assertRedirect(route('login'));
 });

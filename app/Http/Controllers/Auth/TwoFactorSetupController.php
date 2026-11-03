@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Fortify\Fortify;
@@ -38,8 +39,12 @@ class TwoFactorSetupController extends Controller
         }
 
         // Generates a secret only when none exists, so reloading the page
-        // keeps the code already scanned into the user's app.
-        $enable($user);
+        // keeps the code already scanned into the user's app. The lock stops
+        // two pages loading at once from each saving a different secret.
+        Cache::lock('crms.two-factor-setup.'.$user->getKey(), 10)->block(5, function () use ($user, $enable): void {
+            $user->refresh();
+            $enable($user);
+        });
         $user->refresh();
 
         return Inertia::render('auth/TwoFactorSetup', [

@@ -32,6 +32,7 @@ import { ref } from 'vue';
 import PasswordStrength from '@/components/PasswordStrength.vue';
 import { formatDateTime, formatRelative } from '@/lib/utils';
 import { show as securityShow } from '@/routes/security';
+import { confirm as confirmSecondFactor } from '@/routes/security/second-factor';
 import { reset as resetTwoFactor } from '@/routes/security/two-factor';
 import {
     destroy as destroySession,
@@ -62,7 +63,7 @@ type ActivityEvent = {
     occurred_at: string;
 };
 
-defineProps<{
+const props = defineProps<{
     account: {
         name: string;
         email: string;
@@ -77,6 +78,8 @@ defineProps<{
         confirmed_at: string | null;
         required: boolean;
         recovery_codes_remaining: number;
+        /** The authenticator was proved in the last few minutes. */
+        second_factor_confirmed: boolean;
     };
     sessionsSupported: boolean;
     sessions: BrowserSession[];
@@ -101,6 +104,10 @@ const eventLabels: Record<string, string> = {
     'mfa.recovery_codes.generated': 'Recovery codes regenerated',
     'mfa.recovery_code.used': 'Recovery code used',
     'mfa.challenge.failed': 'Incorrect authentication code',
+    'mfa.step_up.failed': 'Incorrect authenticator code in settings',
+    'mfa.disabled': 'Multi-factor authentication switched off',
+    'auth.password_check.failed': 'Incorrect password in settings',
+    'auth.password_check.locked': 'Password checks locked (too many attempts)',
 };
 
 /* Password ------------------------------------------------------------- */
@@ -125,20 +132,37 @@ const recoveryHttp = useHttp<Record<string, never>, string[]>({});
 const recoveryDialogOpen = ref(false);
 const visibleCodes = ref<string[]>([]);
 
-/** Password confirmation has expired; the server answers JSON with 423. */
-const PASSWORD_CONFIRMATION_REQUIRED = 423;
+/**
+ * A confirmation has expired; the server answers JSON with 423. The body says
+ * whether it is the authenticator or the password that must be confirmed.
+ */
+const CONFIRMATION_REQUIRED = 423;
+
+/** The session has ended; reloading takes the user to sign in. */
+const SESSION_ENDED = 401;
 
 async function showRecoveryCodes(): Promise<void> {
     try {
         visibleCodes.value = await recoveryHttp.get(recoveryCodesRoute.url());
         recoveryDialogOpen.value = true;
     } catch (error) {
-        const status = (error as { response?: { status?: number } })?.response
-            ?.status;
+        const response = (
+            error as { response?: { status?: number; data?: string } }
+        )?.response;
 
-        if (status === PASSWORD_CONFIRMATION_REQUIRED) {
-            // Reloading this page asks for the password, then returns here.
-            router.visit(securityShow.url());
+        if (response?.status === SESSION_ENDED) {
+            router.reload();
+
+            return;
+        }
+
+        if (response?.status === CONFIRMATION_REQUIRED) {
+            if (needsSecondFactor(response.data)) {
+                withSecondFactor(() => void showRecoveryCodes(), true);
+            } else {
+                // Reloading this page asks for the password, then returns here.
+                router.visit(securityShow.url());
+            }
 
             return;
         }
@@ -147,6 +171,64 @@ async function showRecoveryCodes(): Promise<void> {
             'Your recovery codes could not be loaded. Please try again.',
         );
     }
+}
+
+function needsSecondFactor(body: string | undefined): boolean {
+    try {
+        return JSON.parse(body ?? '{}').second_factor_required === true;
+    } catch {
+        return false;
+    }
+}
+
+/* Second factor -------------------------------------------------------- */
+
+const secondFactorOpen = ref(false);
+const secondFactorWithRecoveryCode = ref(false);
+const secondFactorForm = useForm({ code: '', recovery_code: '' });
+let afterSecondFactor: (() => void) | null = null;
+
+/**
+ * Run an action that needs a recent proof of the authenticator (viewing or
+ * replacing recovery codes), asking for a code first when there is none.
+ */
+function withSecondFactor(action: () => void, ask = false): void {
+    if (props.twoFactor.second_factor_confirmed && !ask) {
+        action();
+
+        return;
+    }
+
+    afterSecondFactor = action;
+    secondFactorWithRecoveryCode.value = false;
+    secondFactorForm.reset();
+    secondFactorForm.clearErrors();
+    secondFactorOpen.value = true;
+}
+
+function toggleSecondFactorMethod(): void {
+    secondFactorWithRecoveryCode.value = !secondFactorWithRecoveryCode.value;
+    secondFactorForm.reset();
+    secondFactorForm.clearErrors();
+}
+
+function submitSecondFactor(): void {
+    secondFactorForm
+        .transform((data) =>
+            secondFactorWithRecoveryCode.value
+                ? { recovery_code: data.recovery_code.trim() }
+                : { code: data.code.replace(/\s/g, '') },
+        )
+        .post(confirmSecondFactor.url(), {
+            preserveScroll: true,
+            onSuccess: () => {
+                secondFactorOpen.value = false;
+                const action = afterSecondFactor;
+                afterSecondFactor = null;
+                action?.();
+            },
+            onError: () => secondFactorForm.reset(),
+        });
 }
 
 async function confirmRegenerateCodes(): Promise<void> {
@@ -164,14 +246,20 @@ async function confirmRegenerateCodes(): Promise<void> {
         return;
     }
 
-    router.post(
-        regenerateRecoveryCodes.url(),
-        {},
-        {
-            preserveScroll: true,
-            onSuccess: () => void showRecoveryCodes(),
-        },
+    withSecondFactor(() =>
+        router.post(
+            regenerateRecoveryCodes.url(),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => void showRecoveryCodes(),
+            },
+        ),
     );
+}
+
+function viewRecoveryCodes(): void {
+    withSecondFactor(() => void showRecoveryCodes());
 }
 
 const resetAuthenticatorOpen = ref(false);
@@ -413,7 +501,7 @@ function submitSignOutOthers(): void {
                     <ElButton
                         size="small"
                         :loading="recoveryHttp.processing"
-                        @click="showRecoveryCodes"
+                        @click="viewRecoveryCodes"
                         >View</ElButton
                     >
                 </div>
@@ -586,6 +674,67 @@ function submitSignOutOthers(): void {
     </ElDialog>
 
     <!-- Sign out other sessions dialog -->
+    <ElDialog
+        v-model="secondFactorOpen"
+        title="Confirm it’s you"
+        width="min(440px, calc(100vw - 32px))"
+        append-to-body
+    >
+        <p class="mb-4 text-sm text-slate-600">
+            Recovery codes can sign in without your phone, so viewing or
+            replacing them needs a code from your authenticator app.
+        </p>
+        <ElForm label-position="top" @submit.prevent="submitSecondFactor">
+            <ElFormItem
+                v-if="!secondFactorWithRecoveryCode"
+                label="Code from your authenticator app"
+                :error="secondFactorForm.errors.code"
+            >
+                <ElInput
+                    v-model="secondFactorForm.code"
+                    name="second_factor_code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    placeholder="000000"
+                    :prefix-icon="Iphone"
+                />
+            </ElFormItem>
+            <ElFormItem
+                v-else
+                label="Recovery code (it will be used up)"
+                :error="secondFactorForm.errors.recovery_code"
+            >
+                <ElInput
+                    v-model="secondFactorForm.recovery_code"
+                    name="second_factor_recovery_code"
+                    autocomplete="off"
+                    placeholder="xxxxxxxxxx-xxxxxxxxxx"
+                    :prefix-icon="Key"
+                />
+            </ElFormItem>
+        </ElForm>
+        <button
+            type="button"
+            class="text-sm font-semibold text-brand-600 hover:text-brand-800"
+            @click="toggleSecondFactorMethod"
+        >
+            {{
+                secondFactorWithRecoveryCode
+                    ? 'Use authenticator code'
+                    : 'Use a recovery code instead'
+            }}
+        </button>
+        <template #footer>
+            <ElButton @click="secondFactorOpen = false">Cancel</ElButton>
+            <ElButton
+                type="primary"
+                :loading="secondFactorForm.processing"
+                @click="submitSecondFactor"
+                >Continue</ElButton
+            >
+        </template>
+    </ElDialog>
     <ElDialog
         v-model="resetAuthenticatorOpen"
         title="Replace your authenticator"

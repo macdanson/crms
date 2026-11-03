@@ -5,6 +5,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\AccountInvitation;
 use App\Services\AccountLifecycle;
+use App\Services\SessionPolicy;
 use Illuminate\Support\Facades\Notification;
 
 it('invites a user from the command line', function () {
@@ -95,4 +96,16 @@ it('finds the account whatever spacing or case the email is typed with', functio
     $this->artisan('user:suspend', ['email' => '  Officer@CRMS.test ', '--reason' => 'Investigation'])->assertSuccessful();
 
     expect($user->fresh()->status)->toBe(AccountStatus::Suspended);
+});
+
+it('keeps the authenticator if its other sessions cannot be ended', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->mock(SessionPolicy::class)
+        ->shouldReceive('endOtherSessions')
+        ->andThrow(new RuntimeException('Session store unavailable'));
+
+    expect(fn () => app(AccountLifecycle::class)->resetTwoFactor($user))->toThrow(RuntimeException::class);
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeTrue();
 });

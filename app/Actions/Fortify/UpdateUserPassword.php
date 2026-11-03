@@ -3,6 +3,8 @@
 namespace App\Actions\Fortify;
 
 use App\Models\User;
+use App\Services\PasswordCheck;
+use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -25,12 +27,27 @@ class UpdateUserPassword implements UpdatesUserPasswords
     public function update(User $user, array $input): void
     {
         Validator::make($input, [
-            'current_password' => ['required', 'string', 'current_password:web'],
+            'current_password' => ['required', 'string'],
             'password' => [...$this->passwordRules(), 'different:current_password'],
         ], [
-            'current_password.current_password' => __('The provided password does not match your current password.'),
             'password.different' => __('Your new password must be different from your current password.'),
-        ])->validate();
+        ])->after(function (ValidatorContract $validator) use ($user, $input): void {
+            if ($validator->errors()->has('current_password')) {
+                return;
+            }
+
+            // Limited and audited like every in-session password check.
+            $error = app(PasswordCheck::class)->check(
+                $user,
+                (string) $input['current_password'],
+                'password_change',
+                __('The provided password does not match your current password.'),
+            );
+
+            if ($error !== null) {
+                $validator->errors()->add('current_password', $error);
+            }
+        })->validate();
 
         $user->forceFill([
             'password' => Hash::make($input['password']),

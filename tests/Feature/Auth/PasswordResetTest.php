@@ -3,9 +3,9 @@
 use App\Enums\AccountStatus;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
 use App\Models\User;
+use App\Notifications\ResetPasswordLink;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
@@ -18,7 +18,7 @@ it('sends a reset link to a known email address', function () {
         ->assertSessionHas('status', PasswordResetLinkRequestedResponse::message())
         ->assertSessionHasNoErrors();
 
-    Notification::assertSentTo($user, ResetPassword::class);
+    Notification::assertSentTo($user, ResetPasswordLink::class);
 });
 
 it('gives an unknown email address the same response so accounts cannot be discovered', function () {
@@ -113,4 +113,15 @@ it('signs out every session with any session driver after a password reset', fun
         ->withSession([SessionPolicy::STAMP => $signedInStamp])
         ->get(route('dashboard'))
         ->assertRedirect(route('login'));
+});
+
+it('takes at least the same minimum time for an unknown email address', function () {
+    // Warm up first, so start-up time is not what is measured.
+    $this->post(route('password.email'), ['email' => 'someone@crms.test']);
+
+    $startedAt = microtime(true);
+
+    $this->post(route('password.email'), ['email' => 'nobody@crms.test'])->assertSessionHasNoErrors();
+
+    expect(microtime(true) - $startedAt)->toBeGreaterThanOrEqual(0.3);
 });

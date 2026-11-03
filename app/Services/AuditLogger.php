@@ -18,6 +18,8 @@ use Illuminate\Support\Str;
  */
 class AuditLogger
 {
+    public function __construct(private BrowserSessions $sessions) {}
+
     /**
      * Context keys that must never be persisted.
      *
@@ -74,7 +76,7 @@ class AuditLogger
             return null;
         }
 
-        return hash_hmac('sha256', $request->session()->getId(), (string) config('app.key'));
+        return $this->sessions->sessionHash($request->session()->getId());
     }
 
     /**

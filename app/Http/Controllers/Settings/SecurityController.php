@@ -7,6 +7,7 @@ use App\Listeners\RecordAuthenticationActivity;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\BrowserSessions;
+use App\Services\SecondFactor;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -28,9 +29,10 @@ class SecurityController extends Controller
         'auth.password_reset.completed', 'mfa.enrolment.confirmed', 'mfa.reset',
         'mfa.recovery_codes.generated', 'mfa.recovery_code.used', 'mfa.challenge.failed',
         'auth.sessions.revoked_others', 'auth.session.revoked', 'auth.session.invalidated', 'mfa.reset.failed',
+        'mfa.step_up.failed', 'auth.password_check.failed', 'auth.password_check.locked', 'mfa.disabled',
     ];
 
-    public function show(Request $request, BrowserSessions $sessions): Response
+    public function show(Request $request, BrowserSessions $sessions, SecondFactor $secondFactor): Response
     {
         /** @var User $user */
         $user = $request->user();
@@ -50,6 +52,7 @@ class SecurityController extends Controller
                 'confirmed_at' => $user->two_factor_confirmed_at?->toIso8601String(),
                 'required' => (bool) config('crms.auth.require_mfa'),
                 'recovery_codes_remaining' => $user->remainingRecoveryCodeCount(),
+                'second_factor_confirmed' => $secondFactor->isRecentlyConfirmed($request->session()),
             ],
             'sessionsSupported' => $sessions->supported(),
             'sessions' => $sessions->forUser($user, $request->session()->getId())->values(),

@@ -7,6 +7,7 @@ use App\Http\Middleware\EnsureSessionIsCurrent;
 use App\Http\Middleware\EnsureTwoFactorIsEnrolled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequirePasswordConfirmation;
+use App\Http\Middleware\RequireSecondFactorConfirmation;
 use App\Http\Middleware\SetSecurityHeaders;
 use App\Http\ResponseFormat;
 use Illuminate\Foundation\Application;
@@ -33,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             EnforceSessionTimeouts::class,
             EnsureAccountIsActive::class,
             EnsureSessionIsCurrent::class,
+            RequireSecondFactorConfirmation::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
@@ -52,7 +54,13 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return route('login');
         });
-        $middleware->redirectUsersTo(fn () => route('dashboard'));
+        $middleware->redirectUsersTo(function (Request $request): string {
+            if ($request->hasSession()) {
+                $request->session()->reflash();
+            }
+
+            return route('dashboard');
+        });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => ResponseFormat::wantsJson($request));
@@ -64,10 +72,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
             $status = $response->getStatusCode();
 
-            // An expired CSRF token usually means the session timed out. (Inertia
-            // turns this 302 into a 303 for PUT/DELETE, like any other.)
+            // An expired CSRF token. If the user is still signed in (for example
+            // they signed in again in another tab), send them back to try
+            // again; otherwise the session timed out. (Inertia turns these
+            // 302s into 303s for PUT/DELETE, like any other.)
             if ($status === 419) {
-                return redirect()->route('login')->with('status', 'Your session expired. Please sign in again.');
+                return $request->user() !== null
+                    ? back()->with('error', 'This page had expired, so your last action was not saved. Please try again.')
+                    : redirect()->route('login')->with('status', 'Your session expired. Please sign in again.');
             }
 
             if ($status === 429 && $request->header('X-Inertia')) {

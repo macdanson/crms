@@ -23,7 +23,6 @@ class AccountLifecycle
 {
     public function __construct(
         private AuditLogger $audit,
-        private BrowserSessions $sessions,
         private SessionPolicy $policy,
     ) {}
 
@@ -103,17 +102,18 @@ class AccountLifecycle
 
     public function suspend(User $user, string $reason, ?User $actor = null): void
     {
-        $user->forceFill([
-            'status' => AccountStatus::Suspended,
-            'suspended_at' => now(),
-            'suspension_reason' => $reason,
-            'remember_token' => Str::random(60),
-        ])->save();
+        // Ending the sessions as part of the suspension covers the account
+        // being reactivated before a session makes another request.
+        $revoked = DB::transaction(function () use ($user, $reason): int {
+            $user->forceFill([
+                'status' => AccountStatus::Suspended,
+                'suspended_at' => now(),
+                'suspension_reason' => $reason,
+                'remember_token' => Str::random(60),
+            ])->save();
 
-        // Ends every session even if the account is reactivated before the
-        // session makes another request.
-        $this->policy->endOtherSessions($user);
-        $revoked = $this->sessions->revokeAll($user);
+            return $this->policy->endOtherSessions($user);
+        });
 
         $this->audit->record('account.suspended', AuditOutcome::Success, $user, [
             'actor_id' => $actor?->getKey(),
@@ -153,22 +153,20 @@ class AccountLifecycle
      */
     public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null): void
     {
-        $user->forceFill([
-            'two_factor_secret' => null,
-            'two_factor_recovery_codes' => null,
-            'two_factor_confirmed_at' => null,
-            // Invalidate any "remember me" cookie, which would otherwise let
-            // its holder sign back in and enrol their own authenticator.
-            'remember_token' => Str::random(60),
-        ])->save();
+        // One transaction: no other session may see the account without an
+        // authenticator before it has been signed out, or it could enrol one.
+        $revoked = DB::transaction(function () use ($user, $keepSession): int {
+            $user->forceFill([
+                'two_factor_secret' => null,
+                'two_factor_recovery_codes' => null,
+                'two_factor_confirmed_at' => null,
+                // Invalidate any "remember me" cookie, which would otherwise let
+                // its holder sign back in and enrol their own authenticator.
+                'remember_token' => Str::random(60),
+            ])->save();
 
-        // The stamp ends other sessions with any session driver; deleting the
-        // stored sessions (database driver only) also clears the session list.
-        $this->policy->endOtherSessions($user, $keepSession);
-
-        $revoked = $keepSession === null
-            ? $this->sessions->revokeAll($user)
-            : $this->sessions->revokeOthers($user, $keepSession->getId());
+            return $this->policy->endOtherSessions($user, $keepSession);
+        });
 
         $this->audit->record('mfa.reset', AuditOutcome::Success, $user, [
             'actor_id' => $actor?->getKey(),
