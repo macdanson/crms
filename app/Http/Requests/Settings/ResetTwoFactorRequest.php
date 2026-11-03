@@ -9,6 +9,15 @@ namespace App\Http\Requests\Settings;
  */
 class ResetTwoFactorRequest extends SecondFactorRequest
 {
+    /**
+     * The reset clears every recovery code in its own transaction, so a
+     * reset that fails leaves the user's codes untouched.
+     */
+    protected function usesUpRecoveryCode(): bool
+    {
+        return false;
+    }
+
     protected function failureEvent(): string
     {
         return 'mfa.reset.failed';

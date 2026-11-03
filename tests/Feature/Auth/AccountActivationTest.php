@@ -183,3 +183,35 @@ it('activates the account only once when a second request uses the link before t
         ->and(Hash::check('Second-Password-2026!', $user->fresh()->password))->toBeTrue()
         ->and(AuditEvent::where('event', 'account.activated')->count())->toBe(1);
 });
+
+it('refuses a superseded link when the account is invited again while it is being used', function () {
+    [$user, $oldToken] = inviteUser();
+    $lifecycle = app(AccountLifecycle::class);
+    $reinvited = false;
+
+    // An administrator re-sends the invitation after the old link was found
+    // valid, before it activates the account.
+    DB::listen(function (QueryExecuted $query) use (&$reinvited, $lifecycle, $user): void {
+        if ($reinvited || ! str_contains($query->sql, 'account_activation_tokens')) {
+            return;
+        }
+
+        $reinvited = true;
+        $lifecycle->invite(['name' => $user->name, 'email' => $user->email]);
+    });
+
+    expect($lifecycle->activate($user->email, $oldToken, 'Old-Link-Password-2026!'))->toBeFalse();
+
+    $newToken = '';
+    Notification::assertSentTo($user, AccountInvitation::class, function (AccountInvitation $notification) use (&$newToken, $oldToken): bool {
+        if ($notification->token !== $oldToken) {
+            $newToken = $notification->token;
+        }
+
+        return true;
+    });
+
+    expect($newToken)->not->toBe('')
+        ->and($lifecycle->activate($user->email, $newToken, 'New-Link-Password-2026!'))->toBeTrue()
+        ->and(Hash::check('New-Link-Password-2026!', $user->fresh()->password))->toBeTrue();
+});

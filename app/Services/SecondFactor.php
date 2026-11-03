@@ -4,11 +4,11 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Fortify\Events\RecoveryCodeReplaced;
 use Laravel\Fortify\Fortify;
 use Laravel\Fortify\RecoveryCode;
-use RuntimeException;
 
 /**
  * Checks a user's second factor (an authenticator code or a recovery code)
@@ -53,6 +53,36 @@ class SecondFactor
     }
 
     /**
+     * Whether the code is one of the user's unused recovery codes, read
+     * afresh. Does not use it up.
+     */
+    public function hasRecoveryCode(User $user, string $recoveryCode): bool
+    {
+        $storedCodes = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
+
+        if (! is_string($storedCodes)) {
+            return false;
+        }
+
+        $recoveryCode = trim($recoveryCode);
+
+        return collect($this->decodeCodes($storedCodes))
+            ->contains(fn (string $code): bool => hash_equals($code, $recoveryCode));
+    }
+
+    /**
+     * The codes held in the stored (encrypted) recovery codes value.
+     *
+     * @return list<string>
+     */
+    private function decodeCodes(string $storedCodes): array
+    {
+        $codes = json_decode(Fortify::currentEncrypter()->decrypt($storedCodes), true);
+
+        return is_array($codes) ? array_values(array_filter($codes, is_string(...))) : [];
+    }
+
+    /**
      * Use up a recovery code if it is still unused, replacing it with a new
      * one. Returns false when the code is not (or no longer) one of the
      * user's.
@@ -65,7 +95,8 @@ class SecondFactor
      * retried against the new codes: false then always means the code is
      * really not there, never that the request lost a race.
      *
-     * @throws RuntimeException if the codes keep changing (a safety net).
+     * @throws ValidationException if the codes keep changing (a safety net),
+     *                             asking the user to try again.
      */
     public function consumeRecoveryCode(User $user, string $recoveryCode): bool
     {
@@ -79,8 +110,7 @@ class SecondFactor
                 return false;
             }
 
-            /** @var list<string> $codes */
-            $codes = json_decode($encrypter->decrypt($storedCodes), true);
+            $codes = $this->decodeCodes($storedCodes);
             $usedCode = collect($codes)->first(fn (string $code): bool => hash_equals($code, $recoveryCode));
 
             if ($usedCode === null) {
@@ -98,6 +128,7 @@ class SecondFactor
 
             if ($updated === 1) {
                 $user->forceFill(['two_factor_recovery_codes' => $replacedCodes])->syncOriginalAttribute('two_factor_recovery_codes');
+                $user->justUsedRecoveryCode = $usedCode;
 
                 RecoveryCodeReplaced::dispatch($user, $usedCode);
 
@@ -105,7 +136,9 @@ class SecondFactor
             }
         }
 
-        throw new RuntimeException('The recovery codes kept changing while one was being used.');
+        throw ValidationException::withMessages([
+            'recovery_code' => 'Your recovery codes changed while this code was being checked. Please try again.',
+        ]);
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Models\User;
 use Closure;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Limits guesses at a secret (password, authenticator code) made from inside
@@ -43,7 +44,16 @@ class AccountAttemptLimiter
             return AttemptResult::Locked;
         }
 
-        if (! $check()) {
+        try {
+            $passed = $check();
+        } catch (Throwable $exception) {
+            // The check could not give an answer, so it was not a guess.
+            RateLimiter::decrement($key, self::DECAY_SECONDS);
+
+            throw $exception;
+        }
+
+        if (! $passed) {
             return AttemptResult::Failed;
         }
 

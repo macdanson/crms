@@ -2,10 +2,13 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Enums\AttemptResult;
 use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\AccountAttemptLimiter;
 use App\Services\AuditLogger;
 use App\Services\SecondFactor;
+use Closure;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLoginRequest;
 
@@ -16,7 +19,9 @@ use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLogin
  *   step must not finish signing in;
  * - uses a recovery code up atomically while checking it, so two sign-ins
  *   with the same code cannot both succeed, and the loser stays on the
- *   challenge with an error.
+ *   challenge with an error;
+ * - limits code guesses per account (shared with the checks in settings),
+ *   not only per challenge, so restarting the challenge does not help.
  */
 class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
 {
@@ -29,7 +34,11 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
     {
         $user = parent::challengedUser();
 
-        if ($user instanceof User && ! $user->isActive()) {
+        if (! $user instanceof User) {
+            return $user;
+        }
+
+        if (! $user->isActive()) {
             $this->session()->forget(['login.id', 'login.remember']);
 
             app(AuditLogger::class)->record('auth.login.blocked', AuditOutcome::Blocked, $user, [
@@ -56,12 +65,57 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             return null;
         }
 
-        if (! app(SecondFactor::class)->consumeRecoveryCode($this->challengedUser(), $this->recovery_code)) {
+        $user = $this->challengedUser();
+        $recoveryCode = $this->recovery_code;
+
+        if (! $this->limitedCheck($user, fn (): bool => app(SecondFactor::class)->consumeRecoveryCode($user, $recoveryCode))) {
             return null;
         }
 
         $this->session()->forget('login.id');
 
-        return trim($this->recovery_code);
+        return trim($recoveryCode);
+    }
+
+    /**
+     * Whether the authenticator code is right (per-account limited).
+     */
+    public function hasValidCode(): bool
+    {
+        if (! is_string($this->code) || $this->code === '') {
+            return false;
+        }
+
+        $user = $this->challengedUser();
+        $code = $this->code;
+
+        if (! $this->limitedCheck($user, fn (): bool => app(SecondFactor::class)->isValidCode($user, $code))) {
+            return false;
+        }
+
+        $this->session()->forget('login.id');
+
+        return true;
+    }
+
+    /**
+     * @param  Closure(): bool  $check
+     *
+     * @throws ValidationException once too many wrong codes have been given.
+     */
+    private function limitedCheck(User $user, Closure $check): bool
+    {
+        $limiter = app(AccountAttemptLimiter::class);
+        $result = $limiter->attempt('second-factor', $user, $check);
+
+        if ($result === AttemptResult::Locked) {
+            app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user, ['step' => 'sign_in']);
+
+            throw ValidationException::withMessages([
+                ($this->filled('recovery_code') ? 'recovery_code' : 'code') => $limiter->lockedMessage('second-factor', $user, 'codes'),
+            ]);
+        }
+
+        return $result === AttemptResult::Passed;
     }
 }

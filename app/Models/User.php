@@ -14,6 +14,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -49,6 +50,12 @@ class User extends Authenticatable
     use HasFactory, Notifiable, TwoFactorAuthenticatable;
 
     /**
+     * The recovery code this instance has just used up, if any (set by
+     * SecondFactor::consumeRecoveryCode). Not stored.
+     */
+    public ?string $justUsedRecoveryCode = null;
+
+    /**
      * Default attribute values for newly provisioned accounts.
      *
      * @var array<string, mixed>
@@ -67,16 +74,29 @@ class User extends Authenticatable
     }
 
     /**
-     * Use up a recovery code if it is still unused (atomically; see
-     * SecondFactor::consumeRecoveryCode). At sign-in the code has already
-     * been used up while it was checked (TwoFactorLoginRequest), so Fortify's
-     * call here afterwards changes nothing.
+     * Use up a recovery code, atomically (SecondFactor::consumeRecoveryCode),
+     * keeping Fortify's contract: a code that is not, or no longer, one of
+     * the user's is refused.
+     *
+     * At sign-in the code was already used up while it was checked
+     * (TwoFactorLoginRequest); Fortify's call here afterwards, on the same
+     * instance, is recognised and does nothing.
      *
      * @param  string  $code
+     *
+     * @throws ValidationException
      */
     public function replaceRecoveryCode($code): void
     {
-        app(SecondFactor::class)->consumeRecoveryCode($this, $code);
+        if ($this->justUsedRecoveryCode !== null && hash_equals($this->justUsedRecoveryCode, (string) $code)) {
+            return;
+        }
+
+        if (! app(SecondFactor::class)->consumeRecoveryCode($this, (string) $code)) {
+            throw ValidationException::withMessages([
+                'recovery_code' => __('The provided two factor recovery code was invalid.'),
+            ]);
+        }
     }
 
     /**

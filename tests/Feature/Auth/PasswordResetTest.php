@@ -6,11 +6,13 @@ use App\Models\User;
 use App\Notifications\ResetPasswordLink;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
+use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
 
 it('sends a reset link to a known email address', function () {
     Notification::fake();
@@ -158,4 +160,21 @@ it('hashes for a known email whose last link is too recent to send another', fun
     Hash::swap($hasher);
 
     $this->post(route('password.email'), ['email' => $user->email])->assertSessionHasNoErrors();
+});
+
+it('hashes only the token when a link is sent, whatever response class is bound', function () {
+    app()->bind(SuccessfulPasswordResetLinkRequestResponse::class, fn () => new class implements SuccessfulPasswordResetLinkRequestResponse
+    {
+        public function toResponse($request): RedirectResponse
+        {
+            return back();
+        }
+    });
+    $user = User::factory()->create();
+
+    $hasher = Mockery::mock(app('hash'));
+    $hasher->shouldReceive('make')->once()->passthru();
+    Hash::swap($hasher);
+
+    $this->post(route('password.email'), ['email' => $user->email]);
 });

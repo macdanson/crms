@@ -4,10 +4,9 @@ namespace App\Http\Requests\Settings;
 
 use App\Models\User;
 use App\Services\PasswordCheck;
-use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Validator;
+use Illuminate\Validation\ValidationException;
 
 class RevokeOtherSessionsRequest extends FormRequest
 {
@@ -32,33 +31,26 @@ class RevokeOtherSessionsRequest extends FormRequest
     }
 
     /**
-     * The password is checked by PasswordCheck, which limits and audits
-     * wrong guesses.
+     * Once the input rules pass, check the password (limited and audited by
+     * PasswordCheck), so the action cannot run without it. Same pattern as
+     * SecondFactorRequest.
      *
-     * @return array<int, Closure(Validator): void>
+     * @throws ValidationException
      */
-    public function after(): array
+    protected function passedValidation(): void
     {
-        return [
-            function (Validator $validator): void {
-                if ($validator->errors()->isNotEmpty()) {
-                    return;
-                }
+        /** @var User $user */
+        $user = $this->user();
 
-                /** @var User $user */
-                $user = $this->user();
+        $error = app(PasswordCheck::class)->check(
+            $user,
+            $this->string('password')->toString(),
+            'revoke_other_sessions',
+            'The password is incorrect.',
+        );
 
-                $error = app(PasswordCheck::class)->check(
-                    $user,
-                    $this->string('password')->toString(),
-                    'revoke_other_sessions',
-                    'The password is incorrect.',
-                );
-
-                if ($error !== null) {
-                    $validator->errors()->add('password', $error);
-                }
-            },
-        ];
+        if ($error !== null) {
+            throw ValidationException::withMessages(['password' => $error]);
+        }
     }
 }

@@ -45,16 +45,27 @@ class AccountLifecycle
             ]);
         }
 
-        $user ??= new User;
-        $user->forceFill([
+        $details = [
             'name' => $attributes['name'],
             'email' => $email,
-            'staff_number' => $attributes['staff_number'] ?? $user->staff_number,
-            'job_title' => $attributes['job_title'] ?? $user->job_title,
+            'staff_number' => $attributes['staff_number'] ?? $user?->staff_number,
+            'job_title' => $attributes['job_title'] ?? $user?->job_title,
             'status' => AccountStatus::Pending,
-            // An unusable random secret until the user chooses a password.
-            'password' => Str::password(64),
-        ])->save();
+            // An unusable random secret until the user chooses a password. A
+            // new one for every invitation also marks the invitation (see
+            // claimPendingAccount).
+            'password' => Hash::make(Str::password(64)),
+        ];
+
+        if ($user === null) {
+            $user = (new User)->forceFill($details);
+            $user->save();
+        } elseif (! $this->updatePendingAccount($user, $details)) {
+            // Activated since it was loaded above.
+            throw ValidationException::withMessages([
+                'email' => 'An account with this email address has already been activated.',
+            ]);
+        }
 
         $user->notify(new AccountInvitation($this->invitationBroker()->createToken($user)));
 
@@ -177,14 +188,18 @@ class AccountLifecycle
 
     /**
      * Activate the account with the chosen password, but only if it is still
-     * pending. The check and the change are one conditional update, so when
-     * two requests use the same link, only the first activates the account.
+     * pending and has not been invited again since $user was loaded (every
+     * invitation gives a pending account a new random password, so an
+     * unchanged password hash means the link checked is still the current
+     * one). The check and the change are one conditional update, so of two
+     * requests using the same link, or a link and a re-invite, only one wins.
      */
     private function claimPendingAccount(User $user, string $password): bool
     {
         $updated = User::query()
             ->whereKey($user->getKey())
             ->where('status', AccountStatus::Pending)
+            ->where('password', $user->getRawOriginal('password'))
             ->update([
                 'password' => Hash::make($password),
                 'password_changed_at' => now(),
@@ -201,6 +216,24 @@ class AccountLifecycle
         $user->refresh();
 
         return true;
+    }
+
+    /**
+     * Update an account only while it is still pending, so a re-invite can
+     * never turn an account activated a moment ago back into a pending one.
+     *
+     * @param  array<string, mixed>  $details
+     */
+    private function updatePendingAccount(User $user, array $details): bool
+    {
+        $updated = User::query()
+            ->whereKey($user->getKey())
+            ->where('status', AccountStatus::Pending)
+            ->update([...$details, 'updated_at' => now()]);
+
+        $user->refresh();
+
+        return $updated === 1;
     }
 
     private function invitationBroker(): PasswordBroker

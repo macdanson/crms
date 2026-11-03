@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Requests\Settings\SecondFactorRequest;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountAttemptLimiter;
@@ -9,6 +10,9 @@ use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
@@ -352,4 +356,82 @@ it('accepts a valid recovery code however often other codes change while it is u
 
     expect(app(SecondFactor::class)->consumeRecoveryCode($user, $givenCode))->toBeTrue()
         ->and($user->fresh()->recoveryCodes())->not->toContain($givenCode);
+});
+
+it('locks the sign-in challenge per account after five wrong codes, however often it is restarted', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        startTwoFactorLogin($user);
+        $this->post(route('two-factor.login.store'), ['code' => '000000'])->assertSessionHasErrors('code');
+        $this->travel(13)->seconds(); // stay under the challenge's 5-a-minute throttle
+    }
+
+    startTwoFactorLogin($user);
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
+        ->assertSessionHasErrors('code');
+
+    expect(session('errors')->first('code'))->toStartWith('Too many incorrect codes.');
+
+    $this->assertGuest();
+    expect(AuditEvent::where('event', 'mfa.check.locked')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('checks the second factor for any action that takes a second-factor request', function () {
+    Route::post('_test/second-factor-action', fn (SecondFactorRequest $request) => 'action ran')->middleware(['web', 'auth']);
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->postJson('_test/second-factor-action', ['code' => '000000'])
+        ->assertJsonValidationErrors('code');
+
+    $this->postJson('_test/second-factor-action', ['code' => currentAuthenticatorCode($user)])
+        ->assertOk()
+        ->assertSee('action ran');
+});
+
+it('keeps the recovery code if replacing the authenticator fails', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    $this->partialMock(AccountLifecycle::class)
+        ->shouldReceive('resetTwoFactor')
+        ->andThrow(new RuntimeException('Database unavailable'));
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => $recoveryCode])
+        ->assertServerError();
+
+    expect($user->fresh()->recoveryCodes())->toContain($recoveryCode);
+});
+
+it('asks the user to try again, without counting a guess, when the codes keep changing', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    // Every time the codes are read, something else saves them again.
+    DB::listen(function (QueryExecuted $query) use ($user): void {
+        if (! str_starts_with($query->sql, 'select "two_factor_recovery_codes"')) {
+            return;
+        }
+
+        DB::table('users')->where('id', $user->id)->update([
+            'two_factor_recovery_codes' => Fortify::currentEncrypter()->encrypt(json_encode($user->recoveryCodes())),
+        ]);
+    });
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('security.second-factor.confirm'), ['recovery_code' => $recoveryCode])
+        ->assertJsonValidationErrors(['recovery_code' => 'Please try again']);
+
+    expect(RateLimiter::attempts('second-factor-check:'.$user->id))->toBe(0)
+        ->and(AuditEvent::where('event', 'mfa.step_up.failed')->exists())->toBeFalse();
+});
+
+it('refuses to replace a recovery code that is not one of the user\'s', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    expect(fn () => $user->replaceRecoveryCode('not-a-recovery-code'))->toThrow(ValidationException::class);
 });

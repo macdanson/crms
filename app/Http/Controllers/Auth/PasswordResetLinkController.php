@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Http\Responses\PasswordResetLinkRequestedResponse;
+use Closure;
+use Illuminate\Contracts\Auth\PasswordBroker;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
@@ -28,19 +29,60 @@ class PasswordResetLinkController extends FortifyPasswordResetLinkController
      */
     private const MINIMUM_DURATION = 300_000;
 
+    /**
+     * The status the broker returned for this request.
+     */
+    private ?string $brokerStatus = null;
+
     public function store(SendPasswordResetLinkRequest $request): Responsable
     {
+        $this->brokerStatus = null;
+
         return (new Timebox)->call(function () use ($request): Responsable {
             $response = parent::store($request);
 
-            $linkSent = $response instanceof PasswordResetLinkRequestedResponse
-                && $response->status === Password::RESET_LINK_SENT;
-
-            if (! $linkSent) {
+            if ($this->brokerStatus !== Password::RESET_LINK_SENT) {
                 Hash::make(Str::random(64));
             }
 
             return $response;
         }, self::MINIMUM_DURATION);
+    }
+
+    /**
+     * Fortify's broker, recording the status it returns.
+     */
+    protected function broker(): PasswordBroker
+    {
+        $record = function (string $status): void {
+            $this->brokerStatus = $status;
+        };
+
+        return new class(parent::broker(), $record) implements PasswordBroker
+        {
+            /**
+             * @param  Closure(string): void  $record
+             */
+            public function __construct(private PasswordBroker $broker, private Closure $record) {}
+
+            /**
+             * @param  array<string, mixed>  $credentials
+             */
+            public function sendResetLink(array $credentials, ?Closure $callback = null): string
+            {
+                $status = $this->broker->sendResetLink($credentials, $callback);
+                ($this->record)($status);
+
+                return $status;
+            }
+
+            /**
+             * @param  array<string, mixed>  $credentials
+             */
+            public function reset(array $credentials, Closure $callback): mixed
+            {
+                return $this->broker->reset($credentials, $callback);
+            }
+        };
     }
 }

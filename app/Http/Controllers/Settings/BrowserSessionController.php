@@ -46,7 +46,7 @@ class BrowserSessionController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // The password was checked by RevokeOtherSessionsRequest.
+        // RevokeOtherSessionsRequest has already checked the password.
         $revoked = $this->policy->endOtherSessions($user, $request->session());
 
         $this->audit->record('auth.sessions.revoked_others', AuditOutcome::Success, $user, [
