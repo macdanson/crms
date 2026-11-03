@@ -494,7 +494,7 @@ function lockSignInCodes(User $user, int $wrongCodes = AccountAttemptLimiter::MA
     }
 }
 
-it('alerts the user for each new lock, with the time actually left', function () {
+it('alerts the user for each new lock, with the time the pause ends', function () {
     Notification::fake();
     $user = User::factory()->withTwoFactor()->create();
 
@@ -506,7 +506,7 @@ it('alerts the user for each new lock, with the time actually left', function ()
     lockSignInCodes($user);
 
     Notification::assertSentToTimes($user, SignInCodesLocked::class, 2);
-    Notification::assertSentTo($user, SignInCodesLocked::class, fn (SignInCodesLocked $notification): bool => $notification->minutes === 1);
+    Notification::assertSentTo($user, SignInCodesLocked::class, fn (SignInCodesLocked $notification): bool => $notification->pausedUntil?->equalTo(now()->startOfDay()->addSeconds(AccountAttemptLimiter::DECAY_SECONDS * 2)) === true);
 });
 
 it('still answers a locked sign-in normally when the alert cannot be sent', function () {
@@ -546,4 +546,59 @@ it('signs in with a correct authenticator code even if a recovery code was also 
     ])->assertRedirect(route('dashboard'));
 
     expect($user->fresh()->recoveryCodes())->toContain($recoveryCode);
+});
+
+it('alerts the user when the last allowed wrong code is given, without a further attempt', function () {
+    Notification::fake();
+    $user = User::factory()->withTwoFactor()->create();
+
+    startAttemptWindow();
+    lockSignInCodes($user, AccountAttemptLimiter::MAX_ATTEMPTS);
+
+    Notification::assertSentToTimes($user, SignInCodesLocked::class, 1);
+});
+
+it('checks only the authenticator code when both kinds of code are sent at sign-in', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    startAttemptWindow();
+    startTwoFactorLogin($user);
+
+    $this->post(route('two-factor.login.store'), ['code' => '000000', 'recovery_code' => $recoveryCode])
+        ->assertSessionHasErrors('code');
+
+    $this->assertGuest();
+    expect(app(AccountAttemptLimiter::class)->attempts(SecondFactorCheck::AT_SIGN_IN, $user))->toBe(1)
+        ->and($user->fresh()->recoveryCodes())->toContain($recoveryCode);
+});
+
+it('keeps the recovery code in settings when a correct authenticator code is also sent', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('security.second-factor.confirm'), ['code' => currentAuthenticatorCode($user), 'recovery_code' => $recoveryCode])
+        ->assertNoContent();
+
+    expect($user->fresh()->recoveryCodes())->toContain($recoveryCode);
+});
+
+it('still writes the lock alert for a copy queued without the time the pause ends', function () {
+    $user = User::factory()->create();
+
+    $mail = (new SignInCodesLocked)->toMail($user);
+
+    expect(implode(' ', $mail->introLines))->toContain('was paused for a while');
+});
+
+it('treats recovery codes that cannot be decrypted as no codes, not as an error', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('security.second-factor.confirm'), ['recovery_code' => 'abcdefghij-klmnopqrst'])
+        ->assertJsonValidationErrors(['recovery_code' => 'That recovery code is not valid.']);
 });

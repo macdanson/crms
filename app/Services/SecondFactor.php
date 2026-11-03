@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
@@ -125,16 +126,24 @@ class SecondFactor
      */
     private function storedCodes(User $user): ?array
     {
-        $encrypted = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
+        // The raw stored value, untouched by model casts: the swap compares it.
+        $encrypted = User::query()->toBase()->where($user->getKeyName(), $user->getKey())->value('two_factor_recovery_codes');
 
         if (! is_string($encrypted)) {
             return null;
         }
 
         // Decoded as Fortify stores them. Fortify's recoveryCodes() is not used
-        // because it assumes the value is a JSON list; anything else is
-        // treated here as no codes rather than an error.
-        $codes = json_decode(Fortify::currentEncrypter()->decrypt($encrypted), true);
+        // because it assumes a readable JSON list; a value that cannot be
+        // decrypted (for example after a key change) or is not a list counts
+        // as no codes, reported but not an error for the user.
+        try {
+            $codes = json_decode(Fortify::currentEncrypter()->decrypt($encrypted), true);
+        } catch (DecryptException $exception) {
+            report($exception);
+
+            return null;
+        }
 
         return [
             'encrypted' => $encrypted,

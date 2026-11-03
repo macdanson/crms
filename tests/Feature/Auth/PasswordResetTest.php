@@ -202,3 +202,27 @@ it('keeps an account suspended while its pending owner was resetting the passwor
 
     expect($user->fresh()->status)->toBe(AccountStatus::Suspended);
 });
+
+it('activates an account that became pending after it was loaded for the reset', function () {
+    $user = User::factory()->create();
+    $token = Password::broker()->createToken($user);
+
+    // The account is returned to pending while the new password is saved.
+    $returnedToPending = false;
+    User::updating(function (User $saving) use ($user, &$returnedToPending): void {
+        if (! $returnedToPending && $saving->is($user)) {
+            $returnedToPending = true;
+            DB::table('users')->where('id', $user->id)->update(['status' => AccountStatus::Pending->value]);
+        }
+    });
+
+    $this->post(route('password.update'), [
+        'token' => $token,
+        'email' => $user->email,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ]);
+
+    expect($returnedToPending)->toBeTrue()
+        ->and($user->fresh()->status)->toBe(AccountStatus::Active);
+});

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AttemptResult;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
@@ -39,16 +40,17 @@ class AccountAttemptLimiter
      *
      * @param  string  $secret  What is being guessed, e.g. "password".
      * @param  Closure(): bool  $check
-     * @param  (Closure(): void)|null  $onLock  Run once per window, when the limit is first reached.
+     * @param  (Closure(): void)|null  $onLock  Run once per window, as soon as the
+     *                                          limit is reached: by the last wrong guess allowed, or at
+     *                                          the latest by the first guess refused.
      */
     public function attempt(string $secret, User $user, Closure $check, ?Closure $onLock = null): AttemptResult
     {
         $key = $this->key($secret, $user);
+        $hits = RateLimiter::hit($key, self::DECAY_SECONDS);
 
-        if (RateLimiter::hit($key, self::DECAY_SECONDS) > self::MAX_ATTEMPTS) {
-            if ($onLock !== null && Cache::add($key.':locked', true, $this->secondsLeftInWindow())) {
-                $onLock();
-            }
+        if ($hits > self::MAX_ATTEMPTS) {
+            $this->reachedLimit($key, $onLock);
 
             return AttemptResult::Locked;
         }
@@ -62,12 +64,34 @@ class AccountAttemptLimiter
         }
 
         if (! $passed) {
+            if ($hits === self::MAX_ATTEMPTS) {
+                $this->reachedLimit($key, $onLock);
+            }
+
             return AttemptResult::Failed;
         }
 
         $this->takeBack($key);
 
         return AttemptResult::Passed;
+    }
+
+    /**
+     * The moment the current window ends and guessing is allowed again.
+     */
+    public function unlocksAt(): CarbonImmutable
+    {
+        return CarbonImmutable::createFromTimestamp(now()->getTimestamp() + $this->secondsLeftInWindow());
+    }
+
+    /**
+     * @param  (Closure(): void)|null  $onLock
+     */
+    private function reachedLimit(string $key, ?Closure $onLock): void
+    {
+        if ($onLock !== null && Cache::add($key.':locked', true, $this->secondsLeftInWindow())) {
+            $onLock();
+        }
     }
 
     /**
@@ -81,7 +105,7 @@ class AccountAttemptLimiter
     /**
      * Whole minutes until the current window ends (at least 1).
      */
-    public function minutesUntilUnlocked(): int
+    private function minutesUntilUnlocked(): int
     {
         return max(1, (int) ceil($this->secondsLeftInWindow() / 60));
     }

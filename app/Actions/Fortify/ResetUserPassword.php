@@ -19,7 +19,8 @@ class ResetUserPassword implements ResetsUserPasswords
 
     /**
      * A reset proves control of the email address, so a pending account
-     * becomes active. Decided in one conditional update, so a suspension
+     * becomes active. Decided in one conditional update on the stored status
+     * (for an account that is not pending it changes no row), so a suspension
      * made meanwhile is never undone. The account is then reloaded either
      * way, so nothing later works with a status that has changed.
      */
@@ -60,9 +61,7 @@ class ResetUserPassword implements ResetsUserPasswords
                 'password_changed_at' => now(),
             ])->save();
 
-            if ($user->isPending()) {
-                $this->activateIfStillPending($user);
-            }
+            $this->activateIfStillPending($user);
 
             $this->policy->endOtherSessions($user);
         });

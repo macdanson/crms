@@ -89,13 +89,15 @@ class SecondFactorRequest extends FormRequest
     }
 
     /**
-     * The input the proof was given in. The one place that decides it.
+     * The input the proof was given in, and the only one checked: the
+     * authenticator code when one is sent, otherwise the recovery code (the
+     * same rule as the sign-in challenge).
      *
      * @return 'recovery_code'|'code'
      */
     protected function proofField(): string
     {
-        return $this->filled('recovery_code') ? 'recovery_code' : 'code';
+        return $this->filled('code') ? 'code' : 'recovery_code';
     }
 
     /**

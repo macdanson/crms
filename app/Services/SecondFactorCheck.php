@@ -74,6 +74,6 @@ class SecondFactorCheck
      */
     private function alert(User $user): void
     {
-        rescue(fn () => $user->notify(new SignInCodesLocked($this->limiter->minutesUntilUnlocked())), report: true);
+        rescue(fn () => $user->notify(new SignInCodesLocked($this->limiter->unlocksAt())), report: true);
     }
 }

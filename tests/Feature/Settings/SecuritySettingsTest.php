@@ -327,6 +327,7 @@ it('replaces the authenticator with a recovery code when the phone is lost', fun
 });
 
 it('limits and audits wrong passwords given inside a signed-in session', function () {
+    startAttemptWindow();
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user);
@@ -349,6 +350,7 @@ it('limits and audits wrong passwords given inside a signed-in session', functio
 });
 
 it('counts password guesses made in parallel before checking any of them', function () {
+    startAttemptWindow();
     $user = User::factory()->create();
     $limiter = app(AccountAttemptLimiter::class);
     $outcomes = [];
@@ -436,6 +438,7 @@ it('says one minute, not one minutes, near the end of a lock', function () {
 });
 
 it('keeps counting wrong guesses made elsewhere after a right guess', function () {
+    startAttemptWindow();
     $user = User::factory()->create();
     $limiter = app(AccountAttemptLimiter::class);
 
