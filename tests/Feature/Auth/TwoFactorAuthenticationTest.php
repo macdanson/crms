@@ -3,6 +3,7 @@
 use App\Http\Requests\Settings\SecondFactorRequest;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Notifications\SignInCodesLocked;
 use App\Services\AccountAttemptLimiter;
 use App\Services\AccountLifecycle;
 use App\Services\SecondFactor;
@@ -10,12 +11,21 @@ use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
+
+/**
+ * Whether the query reads a user's stored recovery codes.
+ */
+function readsRecoveryCodes(QueryExecuted $query): bool
+{
+    return str_starts_with($query->sql, 'select') && str_contains($query->sql, '"two_factor_recovery_codes" from "users"');
+}
 
 /**
  * Signs in with the password step so the session holds a pending 2FA login.
@@ -330,6 +340,7 @@ it('keeps the sign-in challenge when another sign-in used the same recovery code
         ->assertRedirect(route('two-factor.login'))
         ->assertSessionHasErrors('recovery_code');
 
+    expect($otherSignInDone)->toBeTrue();
     $this->assertGuest();
     $this->get(route('two-factor.login'))->assertOk();
 });
@@ -344,7 +355,7 @@ it('accepts a valid recovery code however often other codes change while it is u
     // After each of the first four reads, another request uses a different
     // code first, so this request's save keeps failing and is retried.
     DB::listen(function (QueryExecuted $query) use (&$codesUsedMeanwhile, &$otherRequestRunning, $codes, $user): void {
-        if ($otherRequestRunning || $codesUsedMeanwhile >= 4 || ! str_starts_with($query->sql, 'select "two_factor_recovery_codes"')) {
+        if ($otherRequestRunning || $codesUsedMeanwhile >= 4 || ! readsRecoveryCodes($query)) {
             return;
         }
 
@@ -355,6 +366,7 @@ it('accepts a valid recovery code however often other codes change while it is u
     });
 
     expect(app(SecondFactor::class)->consumeRecoveryCode($user, $givenCode))->toBeTrue()
+        ->and($codesUsedMeanwhile)->toBe(4)
         ->and($user->fresh()->recoveryCodes())->not->toContain($givenCode);
 });
 
@@ -412,7 +424,7 @@ it('asks the user to try again, without counting a guess, when the codes keep ch
 
     // Every time the codes are read, something else saves them again.
     DB::listen(function (QueryExecuted $query) use ($user): void {
-        if (! str_starts_with($query->sql, 'select "two_factor_recovery_codes"')) {
+        if (! readsRecoveryCodes($query)) {
             return;
         }
 
@@ -434,4 +446,34 @@ it('refuses to replace a recovery code that is not one of the user\'s', function
     $user = User::factory()->withTwoFactor()->create();
 
     expect(fn () => $user->replaceRecoveryCode('not-a-recovery-code'))->toThrow(ValidationException::class);
+});
+
+it('keeps code checks in settings working, and tells the user, when sign-in codes are locked', function () {
+    Notification::fake();
+    $user = User::factory()->withTwoFactor()->create();
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS + 2) as $attempt) {
+        startTwoFactorLogin($user);
+        $this->post(route('two-factor.login.store'), ['code' => '000000']);
+        $this->travel(13)->seconds();
+    }
+
+    Notification::assertSentToTimes($user, SignInCodesLocked::class, 1);
+
+    // The real user's existing session is not locked out of settings.
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('security.second-factor.confirm'), ['code' => currentAuthenticatorCode($user)])
+        ->assertNoContent();
+});
+
+it('records that a recovery code was the proof for replacing the authenticator', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => $user->recoveryCodes()[0]])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect(AuditEvent::where('event', 'mfa.reset')->sole()->context)->toMatchArray(['proof' => 'recovery_code']);
 });

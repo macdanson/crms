@@ -19,16 +19,18 @@ use Illuminate\Http\Response;
  */
 class SecondFactorConfirmationController extends Controller
 {
+    /**
+     * The request has already checked the proof (and used up a recovery code).
+     */
     public function __invoke(SecondFactorRequest $request, SecondFactor $secondFactor, AuditLogger $audit): RedirectResponse|Response
     {
         /** @var User $user */
         $user = $request->user();
 
-        // The request has already checked the proof (and used up a recovery code).
         $secondFactor->markConfirmed($request->session());
 
         $audit->record('mfa.step_up.passed', AuditOutcome::Success, $user, [
-            'method' => $request->filled('recovery_code') ? 'recovery_code' : 'authenticator',
+            'method' => $request->proofMethod(),
         ]);
 
         return ResponseFormat::wantsJson($request) ? response()->noContent() : back();

@@ -178,3 +178,27 @@ it('hashes only the token when a link is sent, whatever response class is bound'
 
     $this->post(route('password.email'), ['email' => $user->email]);
 });
+
+it('keeps an account suspended while its pending owner was resetting the password', function () {
+    $user = User::factory()->pending()->create();
+    $token = Password::broker()->createToken($user);
+
+    // An administrator suspends the account while the new password is being
+    // saved (once: Fortify saves the user again afterwards).
+    $suspended = false;
+    User::updating(function (User $saving) use ($user, &$suspended): void {
+        if (! $suspended && $saving->is($user)) {
+            $suspended = true;
+            DB::table('users')->where('id', $user->id)->update(['status' => AccountStatus::Suspended->value]);
+        }
+    });
+
+    $this->post(route('password.update'), [
+        'token' => $token,
+        'email' => $user->email,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ]);
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Suspended);
+});

@@ -18,6 +18,27 @@ class ResetUserPassword implements ResetsUserPasswords
     public function __construct(private SessionPolicy $policy) {}
 
     /**
+     * A reset proves control of the email address, so a pending account
+     * becomes active. Decided in one conditional update, so a suspension
+     * made meanwhile is never undone.
+     */
+    private function activateIfStillPending(User $user): void
+    {
+        $activated = User::query()
+            ->whereKey($user->getKey())
+            ->where('status', AccountStatus::Pending)
+            ->update([
+                'status' => AccountStatus::Active,
+                'email_verified_at' => $user->email_verified_at ?? now(),
+                'updated_at' => now(),
+            ]);
+
+        if ($activated === 1) {
+            $user->refresh();
+        }
+    }
+
+    /**
      * Validate and reset the user's forgotten password.
      *
      * A reset proves control of the email address, so a pending account whose
@@ -34,18 +55,13 @@ class ResetUserPassword implements ResetsUserPasswords
             'password' => $this->passwordRules(),
         ])->validate();
 
-        $attributes = [
-            'password' => Hash::make($input['password']),
-            'password_changed_at' => now(),
-        ];
+        DB::transaction(function () use ($user, $input): void {
+            $user->forceFill([
+                'password' => Hash::make($input['password']),
+                'password_changed_at' => now(),
+            ])->save();
 
-        if ($user->isPending()) {
-            $attributes['status'] = AccountStatus::Active;
-            $attributes['email_verified_at'] = $user->email_verified_at ?? now();
-        }
-
-        DB::transaction(function () use ($user, $attributes): void {
-            $user->forceFill($attributes)->save();
+            $this->activateIfStillPending($user);
 
             $this->policy->endOtherSessions($user);
         });

@@ -16,6 +16,9 @@ use Throwable;
  *
  * The attempt is counted before the secret is checked: the count is an
  * atomic increment, so parallel requests cannot all slip under the limit.
+ * A right guess, or a check that could not answer, takes back only its own
+ * attempt: wrong guesses made elsewhere (perhaps by someone else) still
+ * count until the window ends.
  */
 class AccountAttemptLimiter
 {
@@ -31,7 +34,6 @@ class AccountAttemptLimiter
 
     /**
      * Count an attempt, then run the check unless the limit is reached.
-     * Success clears the count.
      *
      * @param  string  $secret  What is being guessed, e.g. "password".
      * @param  Closure(): bool  $check
@@ -47,8 +49,7 @@ class AccountAttemptLimiter
         try {
             $passed = $check();
         } catch (Throwable $exception) {
-            // The check could not give an answer, so it was not a guess.
-            RateLimiter::decrement($key, self::DECAY_SECONDS);
+            $this->takeBack($key);
 
             throw $exception;
         }
@@ -57,9 +58,20 @@ class AccountAttemptLimiter
             return AttemptResult::Failed;
         }
 
-        RateLimiter::clear($key);
+        $this->takeBack($key);
 
         return AttemptResult::Passed;
+    }
+
+    /**
+     * Take back one counted attempt. If the window ended while the check ran,
+     * there is nothing to take back, and the count must not go below zero.
+     */
+    private function takeBack(string $key): void
+    {
+        if (RateLimiter::decrement($key, self::DECAY_SECONDS) < 0) {
+            RateLimiter::clear($key);
+        }
     }
 
     /**

@@ -15,13 +15,15 @@ use Illuminate\Http\RedirectResponse;
  */
 class TwoFactorResetController extends Controller
 {
+    /**
+     * The request has already checked the current second factor.
+     */
     public function __invoke(ResetTwoFactorRequest $request, AccountLifecycle $accounts): RedirectResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        // The request has already checked the current second factor.
-        $accounts->resetTwoFactor($user, actor: $user, keepSession: $request->session());
+        $accounts->resetTwoFactor($user, actor: $user, keepSession: $request->session(), proof: $request->proofMethod());
 
         return redirect()->route('two-factor.setup');
     }

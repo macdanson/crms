@@ -58,28 +58,9 @@ class SecondFactor
      */
     public function hasRecoveryCode(User $user, string $recoveryCode): bool
     {
-        $storedCodes = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
+        $stored = $this->storedCodes($user);
 
-        if (! is_string($storedCodes)) {
-            return false;
-        }
-
-        $recoveryCode = trim($recoveryCode);
-
-        return collect($this->decodeCodes($storedCodes))
-            ->contains(fn (string $code): bool => hash_equals($code, $recoveryCode));
-    }
-
-    /**
-     * The codes held in the stored (encrypted) recovery codes value.
-     *
-     * @return list<string>
-     */
-    private function decodeCodes(string $storedCodes): array
-    {
-        $codes = json_decode(Fortify::currentEncrypter()->decrypt($storedCodes), true);
-
-        return is_array($codes) ? array_values(array_filter($codes, is_string(...))) : [];
+        return $stored !== null && $this->matchingCode($stored['codes'], $recoveryCode) !== null;
     }
 
     /**
@@ -100,35 +81,25 @@ class SecondFactor
      */
     public function consumeRecoveryCode(User $user, string $recoveryCode): bool
     {
-        $recoveryCode = trim($recoveryCode);
-        $encrypter = Fortify::currentEncrypter();
-
         for ($attempt = 0; $attempt < self::MAX_SWAP_ATTEMPTS; $attempt++) {
-            $storedCodes = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
+            $stored = $this->storedCodes($user);
+            $usedCode = $stored === null ? null : $this->matchingCode($stored['codes'], $recoveryCode);
 
-            if (! is_string($storedCodes)) {
+            if ($stored === null || $usedCode === null) {
                 return false;
             }
 
-            $codes = $this->decodeCodes($storedCodes);
-            $usedCode = collect($codes)->first(fn (string $code): bool => hash_equals($code, $recoveryCode));
-
-            if ($usedCode === null) {
-                return false;
-            }
-
-            $replacedCodes = $encrypter->encrypt(json_encode(
-                array_map(fn (string $code): string => $code === $usedCode ? RecoveryCode::generate() : $code, $codes),
+            $replacedCodes = Fortify::currentEncrypter()->encrypt(json_encode(
+                array_map(fn (string $code): string => $code === $usedCode ? RecoveryCode::generate() : $code, $stored['codes']),
             ));
 
             $updated = User::query()
                 ->whereKey($user->getKey())
-                ->where('two_factor_recovery_codes', $storedCodes)
+                ->where('two_factor_recovery_codes', $stored['encrypted'])
                 ->update(['two_factor_recovery_codes' => $replacedCodes]);
 
             if ($updated === 1) {
                 $user->forceFill(['two_factor_recovery_codes' => $replacedCodes])->syncOriginalAttribute('two_factor_recovery_codes');
-                $user->justUsedRecoveryCode = $usedCode;
 
                 RecoveryCodeReplaced::dispatch($user, $usedCode);
 
@@ -139,6 +110,37 @@ class SecondFactor
         throw ValidationException::withMessages([
             'recovery_code' => 'Your recovery codes changed while this code was being checked. Please try again.',
         ]);
+    }
+
+    /**
+     * The user's recovery codes as stored now (decoded by Fortify), with the
+     * encrypted value they were read from. Null when there are none.
+     *
+     * @return array{encrypted: string, codes: list<string>}|null
+     */
+    private function storedCodes(User $user): ?array
+    {
+        $fresh = User::query()->select(['id', 'two_factor_recovery_codes'])->whereKey($user->getKey())->first();
+        $encrypted = $fresh?->getRawOriginal('two_factor_recovery_codes');
+
+        if (! $fresh instanceof User || ! is_string($encrypted)) {
+            return null;
+        }
+
+        return [
+            'encrypted' => $encrypted,
+            'codes' => array_values(array_filter($fresh->recoveryCodes(), is_string(...))),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $codes
+     */
+    private function matchingCode(array $codes, string $recoveryCode): ?string
+    {
+        $recoveryCode = trim($recoveryCode);
+
+        return collect($codes)->first(fn (string $code): bool => hash_equals($code, $recoveryCode));
     }
 
     /**

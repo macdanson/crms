@@ -57,17 +57,11 @@ class AccountLifecycle
             'password' => Hash::make(Str::password(64)),
         ];
 
-        if ($user === null) {
-            $user = (new User)->forceFill($details);
-            $user->save();
-        } elseif (! $this->updatePendingAccount($user, $details)) {
-            // Activated since it was loaded above.
-            throw ValidationException::withMessages([
-                'email' => 'An account with this email address has already been activated.',
-            ]);
-        }
+        [$user, $token] = DB::transaction(fn (): array => $user === null
+            ? $this->createPendingAccount($details)
+            : [$user, $this->reinvitePendingAccount($user, $details)]);
 
-        $user->notify(new AccountInvitation($this->invitationBroker()->createToken($user)));
+        $user->notify(new AccountInvitation($token));
 
         $this->audit->record('account.invited', AuditOutcome::Success, $user, [
             'invited_by' => $invitedBy?->getKey(),
@@ -163,7 +157,7 @@ class AccountLifecycle
      * session of a user replacing their own authenticator. Any other session
      * could otherwise enrol an authenticator of its own.
      */
-    public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null): void
+    public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null, ?string $proof = null): void
     {
         // One transaction: no other session may see the account without an
         // authenticator before it has been signed out, or it could enrol one.
@@ -182,6 +176,7 @@ class AccountLifecycle
 
         $this->audit->record('mfa.reset', AuditOutcome::Success, $user, [
             'actor_id' => $actor?->getKey(),
+            'proof' => $proof,
             'sessions_revoked' => $revoked,
         ]);
     }
@@ -216,6 +211,41 @@ class AccountLifecycle
         $user->refresh();
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     * @return array{User, string} The new account and its activation token.
+     */
+    private function createPendingAccount(array $details): array
+    {
+        $user = (new User)->forceFill($details);
+        $user->save();
+
+        return [$user, $this->invitationBroker()->createToken($user)];
+    }
+
+    /**
+     * Replace the activation link first, so the old link stops working
+     * before the account is marked as invited again (claimPendingAccount),
+     * then update the account if it is still pending.
+     *
+     * @param  array<string, mixed>  $details
+     * @return string The new activation token.
+     *
+     * @throws ValidationException if the account was activated meanwhile.
+     */
+    private function reinvitePendingAccount(User $user, array $details): string
+    {
+        $token = $this->invitationBroker()->createToken($user);
+
+        if (! $this->updatePendingAccount($user, $details)) {
+            throw ValidationException::withMessages([
+                'email' => 'An account with this email address has already been activated.',
+            ]);
+        }
+
+        return $token;
     }
 
     /**

@@ -41,12 +41,14 @@ class BrowserSessionController extends Controller
             : back()->with('error', 'That session could not be found. It may already have ended.');
     }
 
+    /**
+     * RevokeOtherSessionsRequest has already checked the password.
+     */
     public function destroyOthers(RevokeOtherSessionsRequest $request): RedirectResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        // RevokeOtherSessionsRequest has already checked the password.
         $revoked = $this->policy->endOtherSessions($user, $request->session());
 
         $this->audit->record('auth.sessions.revoked_others', AuditOutcome::Success, $user, [

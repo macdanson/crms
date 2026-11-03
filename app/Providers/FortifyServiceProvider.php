@@ -8,6 +8,7 @@ use App\Actions\Fortify\EnableTwoFactorAuthentication;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\TwoFactorAuthenticatedSessionController;
 use App\Http\Requests\Auth\TwoFactorLoginRequest;
 use App\Http\Responses\LogoutResponse;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
@@ -29,6 +30,7 @@ use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse;
 use Laravel\Fortify\Fortify;
 use Laravel\Fortify\Http\Controllers\PasswordResetLinkController as FortifyPasswordResetLinkController;
+use Laravel\Fortify\Http\Controllers\TwoFactorAuthenticatedSessionController as FortifyTwoFactorAuthenticatedSessionController;
 use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLoginRequest;
 
 class FortifyServiceProvider extends ServiceProvider
@@ -51,6 +53,7 @@ class FortifyServiceProvider extends ServiceProvider
 
         $this->app->bind(FortifyTwoFactorLoginRequest::class, TwoFactorLoginRequest::class);
         $this->app->bind(FortifyPasswordResetLinkController::class, PasswordResetLinkController::class);
+        $this->app->bind(FortifyTwoFactorAuthenticatedSessionController::class, TwoFactorAuthenticatedSessionController::class);
 
         $this->app->bind(FortifyEnableTwoFactorAuthentication::class, EnableTwoFactorAuthentication::class);
         $this->app->bind(FortifyDisableTwoFactorAuthentication::class, DisableTwoFactorAuthentication::class);

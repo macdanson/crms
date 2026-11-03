@@ -215,3 +215,24 @@ it('refuses a superseded link when the account is invited again while it is bein
         ->and($lifecycle->activate($user->email, $newToken, 'New-Link-Password-2026!'))->toBeTrue()
         ->and(Hash::check('New-Link-Password-2026!', $user->fresh()->password))->toBeTrue();
 });
+
+it('stops the old link working before a re-invite marks the account as invited again', function () {
+    [$user, $oldToken] = inviteUser();
+    $lifecycle = app(AccountLifecycle::class);
+    $oldLinkActivated = null;
+
+    // The old link is used just as the re-invite saves the account.
+    DB::listen(function (QueryExecuted $query) use (&$oldLinkActivated, $lifecycle, $user, $oldToken): void {
+        if ($oldLinkActivated !== null || ! str_starts_with($query->sql, 'update "users"')) {
+            return;
+        }
+
+        $oldLinkActivated = false;
+        $oldLinkActivated = $lifecycle->activate($user->email, $oldToken, 'Old-Link-Password-2026!');
+    });
+
+    $lifecycle->invite(['name' => $user->name, 'email' => $user->email]);
+
+    expect($oldLinkActivated)->toBeFalse()
+        ->and($user->fresh()->isPending())->toBeTrue();
+});

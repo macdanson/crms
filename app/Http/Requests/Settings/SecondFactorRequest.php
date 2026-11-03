@@ -2,12 +2,11 @@
 
 namespace App\Http\Requests\Settings;
 
-use App\Enums\AttemptResult;
 use App\Enums\AuditOutcome;
 use App\Models\User;
-use App\Services\AccountAttemptLimiter;
 use App\Services\AuditLogger;
 use App\Services\SecondFactor;
+use App\Services\SecondFactorCheck;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
@@ -66,19 +65,10 @@ class SecondFactorRequest extends FormRequest
     protected function passedValidation(): void
     {
         $user = $this->challengedUser();
-        $limiter = app(AccountAttemptLimiter::class);
         $field = $this->filled('recovery_code') ? 'recovery_code' : 'code';
 
-        $result = $limiter->attempt('second-factor', $user, fn (): bool => $this->checkProof());
-
-        if ($result === AttemptResult::Passed) {
+        if (app(SecondFactorCheck::class)->attempt($user, SecondFactorCheck::IN_SETTINGS, $field, fn (): bool => $this->checkProof())) {
             return;
-        }
-
-        if ($result === AttemptResult::Locked) {
-            app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user);
-
-            throw ValidationException::withMessages([$field => $limiter->lockedMessage('second-factor', $user, 'codes')]);
         }
 
         app(AuditLogger::class)->record($this->failureEvent(), AuditOutcome::Failure, $user);
@@ -86,6 +76,16 @@ class SecondFactorRequest extends FormRequest
         throw ValidationException::withMessages([$field => $field === 'recovery_code'
             ? 'That recovery code is not valid.'
             : 'That code is not valid. Check your authenticator app and try again.']);
+    }
+
+    /**
+     * How the user proved their second factor, for the audit record.
+     *
+     * @return 'recovery_code'|'authenticator'
+     */
+    public function proofMethod(): string
+    {
+        return $this->filled('recovery_code') ? 'recovery_code' : 'authenticator';
     }
 
     /**

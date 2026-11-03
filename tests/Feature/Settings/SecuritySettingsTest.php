@@ -9,6 +9,7 @@ use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Testing\AssertableInertia;
 
 /**
@@ -432,4 +433,36 @@ it('says one minute, not one minutes, near the end of a lock', function () {
     $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 30)->seconds();
 
     expect($limiter->lockedMessage('password', $user, 'passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
+});
+
+it('keeps counting wrong guesses made elsewhere after a right guess', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    foreach (range(1, 4) as $attempt) {
+        $limiter->attempt('password', $user, fn (): bool => false);
+    }
+
+    expect($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Passed)
+        ->and($limiter->attempt('password', $user, fn (): bool => false))->toBe(AttemptResult::Failed)
+        ->and($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Locked);
+});
+
+it('never counts below zero when the window ends during a check', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    $limiter->attempt('password', $user, function (): bool {
+        $this->travel(AccountAttemptLimiter::DECAY_SECONDS + 1)->seconds();
+
+        return true;
+    });
+
+    expect(RateLimiter::attempts('password-check:'.$user->id))->toBe(0);
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        $limiter->attempt('password', $user, fn (): bool => false);
+    }
+
+    expect($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Locked);
 });

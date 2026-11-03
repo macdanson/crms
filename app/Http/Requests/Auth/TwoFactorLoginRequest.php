@@ -2,12 +2,11 @@
 
 namespace App\Http\Requests\Auth;
 
-use App\Enums\AttemptResult;
 use App\Enums\AuditOutcome;
 use App\Models\User;
-use App\Services\AccountAttemptLimiter;
 use App\Services\AuditLogger;
 use App\Services\SecondFactor;
+use App\Services\SecondFactorCheck;
 use Closure;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLoginRequest;
@@ -20,8 +19,8 @@ use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLogin
  * - uses a recovery code up atomically while checking it, so two sign-ins
  *   with the same code cannot both succeed, and the loser stays on the
  *   challenge with an error;
- * - limits code guesses per account (shared with the checks in settings),
- *   not only per challenge, so restarting the challenge does not help.
+ * - limits code guesses per account (SecondFactorCheck), not only per
+ *   challenge, so restarting the challenge does not help.
  */
 class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
 {
@@ -68,7 +67,7 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
         $user = $this->challengedUser();
         $recoveryCode = $this->recovery_code;
 
-        if (! $this->limitedCheck($user, fn (): bool => app(SecondFactor::class)->consumeRecoveryCode($user, $recoveryCode))) {
+        if (! $this->limitedCheck($user, 'recovery_code', fn (): bool => app(SecondFactor::class)->consumeRecoveryCode($user, $recoveryCode))) {
             return null;
         }
 
@@ -89,7 +88,7 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
         $user = $this->challengedUser();
         $code = $this->code;
 
-        if (! $this->limitedCheck($user, fn (): bool => app(SecondFactor::class)->isValidCode($user, $code))) {
+        if (! $this->limitedCheck($user, 'code', fn (): bool => app(SecondFactor::class)->isValidCode($user, $code))) {
             return false;
         }
 
@@ -103,19 +102,8 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
      *
      * @throws ValidationException once too many wrong codes have been given.
      */
-    private function limitedCheck(User $user, Closure $check): bool
+    private function limitedCheck(User $user, string $field, Closure $check): bool
     {
-        $limiter = app(AccountAttemptLimiter::class);
-        $result = $limiter->attempt('second-factor', $user, $check);
-
-        if ($result === AttemptResult::Locked) {
-            app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user, ['step' => 'sign_in']);
-
-            throw ValidationException::withMessages([
-                ($this->filled('recovery_code') ? 'recovery_code' : 'code') => $limiter->lockedMessage('second-factor', $user, 'codes'),
-            ]);
-        }
-
-        return $result === AttemptResult::Passed;
+        return app(SecondFactorCheck::class)->attempt($user, SecondFactorCheck::AT_SIGN_IN, $field, $check);
     }
 }
