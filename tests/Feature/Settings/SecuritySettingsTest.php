@@ -432,9 +432,11 @@ it('says one minute, not one minutes, near the end of a lock', function () {
         $limiter->attempt('password', $user, fn (): bool => false);
     }
 
-    $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 30)->seconds();
+    // Five wrong guesses lock until 180 seconds into the next window; move to
+    // 30 seconds before that.
+    $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 1 + 150)->seconds();
 
-    expect($limiter->lockedMessage('passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
+    expect($limiter->lockedMessage('password', $user, 'passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
 });
 
 it('keeps counting wrong guesses made elsewhere after a right guess', function () {
@@ -484,4 +486,34 @@ it('never takes back a guess counted in a later window', function () {
     });
 
     expect($limiter->attempts('password', $user))->toBe(1);
+});
+
+it('limits guesses made either side of a window boundary together', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    startAttemptWindow();
+    $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 3)->seconds(); // the last seconds of a window
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        expect($limiter->attempt('password', $user, fn (): bool => false))->toBe(AttemptResult::Failed);
+    }
+
+    $this->travel(3)->seconds(); // the first second of the next window
+
+    expect($limiter->attempt('password', $user, fn (): bool => false))->toBe(AttemptResult::Locked);
+});
+
+it('rejects a password longer than the 72 bytes the hash uses', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $tooLong = 'Aa1!'.str_repeat('é', 40); // 44 characters, 84 bytes
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => $tooLong,
+            'password_confirmation' => $tooLong,
+        ])
+        ->assertSessionHasErrors('password');
 });

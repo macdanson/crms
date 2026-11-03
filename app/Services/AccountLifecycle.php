@@ -157,11 +157,18 @@ class AccountLifecycle
      * session of a user replacing their own authenticator. Any other session
      * could otherwise enrol an authenticator of its own.
      */
-    public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null, ?string $proof = null): void
+    public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null, ?string $proof = null, ?string $recoveryCode = null): void
     {
         // One transaction: no other session may see the account without an
         // authenticator before it has been signed out, or it could enrol one.
-        $revoked = DB::transaction(function () use ($user, $keepSession): int {
+        // A recovery code given as proof is used up in the same transaction,
+        // so a parallel request cannot use it too, and a reset that fails
+        // does not cost the user the code.
+        $revoked = DB::transaction(function () use ($user, $keepSession, $recoveryCode): int {
+            if ($recoveryCode !== null && ! app(SecondFactor::class)->consumeRecoveryCode($user, $recoveryCode)) {
+                throw ValidationException::withMessages(['recovery_code' => 'That recovery code is not valid.']);
+            }
+
             $user->forceFill([
                 'two_factor_secret' => null,
                 'two_factor_recovery_codes' => null,

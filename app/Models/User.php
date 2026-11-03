@@ -160,6 +160,6 @@ class User extends Authenticatable
      */
     public function remainingRecoveryCodeCount(): int
     {
-        return $this->hasEnabledTwoFactorAuthentication() ? count($this->recoveryCodes()) : 0;
+        return $this->hasEnabledTwoFactorAuthentication() ? app(SecondFactor::class)->remainingRecoveryCodes($this) : 0;
     }
 }

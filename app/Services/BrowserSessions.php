@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\DB;
  */
 class BrowserSessions
 {
+    public function __construct(private KeyedHash $keyedHash) {}
+
     public function supported(): bool
     {
         return config('session.driver') === 'database';
@@ -100,7 +102,7 @@ class BrowserSessions
      */
     public function sessionHash(string $sessionId): string
     {
-        return hash_hmac('sha256', $sessionId, (string) config('app.key'));
+        return $this->keyedHash->of($sessionId);
     }
 
     /**

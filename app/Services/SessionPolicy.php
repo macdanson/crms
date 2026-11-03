@@ -24,6 +24,12 @@ class SessionPolicy
 
     public const STAMP = 'crms.session_stamp';
 
+    /**
+     * The sign-in code step in progress: when it began, and the account's
+     * session stamp then.
+     */
+    public const CHALLENGE = 'crms.two_factor_challenge';
+
     public function __construct(private BrowserSessions $sessions) {}
 
     /**
@@ -38,6 +44,46 @@ class SessionPolicy
             self::LAST_ACTIVITY_AT => $now,
             self::STAMP => $this->stampFor($user),
         ]);
+    }
+
+    /**
+     * Record that a guest has passed the password step and must now give a
+     * code (Fortify keeps the account in "login.id").
+     */
+    public function startChallenge(Session $session, User $user): void
+    {
+        $session->put(self::CHALLENGE, [
+            'started_at' => now()->getTimestamp(),
+            'stamp' => $this->stampFor($user),
+        ]);
+    }
+
+    /**
+     * Whether the code step may still be completed: it began recently, and no
+     * password change or reset (which rotates the session stamp) has
+     * happened since the password was given.
+     */
+    public function challengeIsCurrent(Session $session, User $user): bool
+    {
+        $challenge = $session->get(self::CHALLENGE);
+
+        if (! is_array($challenge) || ! is_int($challenge['started_at'] ?? null) || ! is_string($challenge['stamp'] ?? null)) {
+            return false;
+        }
+
+        $timeout = (int) config('crms.auth.challenge_timeout') * 60;
+
+        return now()->getTimestamp() - $challenge['started_at'] < $timeout
+            && $user->session_stamp !== null
+            && hash_equals($user->session_stamp, $challenge['stamp']);
+    }
+
+    /**
+     * Abandon the code step, so the password must be given again.
+     */
+    public function endChallenge(Session $session): void
+    {
+        $session->forget(['login.id', 'login.remember', self::CHALLENGE]);
     }
 
     /**

@@ -34,6 +34,8 @@ return [
     | absolute_lifetime:        Maximum minutes a session may live, active or not.
     | absolute_warning:         Seconds of warning shown before that maximum is reached.
     | notify_new_device:        Email users when a new device signs in.
+    | challenge_timeout:        Minutes allowed between the password and the
+    |                           code steps of signing in.
     |
     */
 
@@ -43,6 +45,7 @@ return [
         'idle_warning' => (int) env('CRMS_IDLE_WARNING', 60),
         'absolute_lifetime' => (int) env('CRMS_SESSION_ABSOLUTE_LIFETIME', 720),
         'absolute_warning' => (int) env('CRMS_SESSION_ABSOLUTE_WARNING', 300),
+        'challenge_timeout' => (int) env('CRMS_CHALLENGE_TIMEOUT', 10),
         'notify_new_device' => (bool) env('CRMS_NOTIFY_NEW_DEVICE', true),
     ],
 

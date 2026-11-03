@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\SecondFactor;
 use App\Services\SecondFactorCheck;
+use App\Services\SessionPolicy;
 use Closure;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLoginRequest;
@@ -16,6 +17,8 @@ use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLogin
  *
  * - re-checks the account status: an account suspended after the password
  *   step must not finish signing in;
+ * - ends the challenge once it is older than the challenge timeout, or once
+ *   the password has been changed or reset since it was given;
  * - uses a recovery code up atomically while checking it, so two sign-ins
  *   with the same code cannot both succeed, and the loser stays on the
  *   challenge with an error;
@@ -37,8 +40,10 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             return $user;
         }
 
+        $policy = app(SessionPolicy::class);
+
         if (! $user->isActive()) {
-            $this->session()->forget(['login.id', 'login.remember']);
+            $policy->endChallenge($this->session());
 
             app(AuditLogger::class)->record('auth.login.blocked', AuditOutcome::Blocked, $user, [
                 'status' => $user->status->value,
@@ -50,7 +55,32 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             ])->redirectTo(route('login'));
         }
 
+        if (! $policy->challengeIsCurrent($this->session(), $user)) {
+            $policy->endChallenge($this->session());
+
+            app(AuditLogger::class)->record('auth.challenge.expired', AuditOutcome::Blocked, $user);
+
+            throw ValidationException::withMessages([
+                'email' => 'Your sign-in took too long or your password has changed. Please sign in again.',
+            ])->redirectTo(route('login'));
+        }
+
         return $user;
+    }
+
+    /**
+     * Whether a challenge is in progress that may still be completed. An
+     * expired one is not offered at all.
+     */
+    public function hasChallengedUser(): bool
+    {
+        if (! parent::hasChallengedUser()) {
+            return false;
+        }
+
+        $user = User::query()->find($this->session()->get('login.id'));
+
+        return $user instanceof User && app(SessionPolicy::class)->challengeIsCurrent($this->session(), $user);
     }
 
     /**

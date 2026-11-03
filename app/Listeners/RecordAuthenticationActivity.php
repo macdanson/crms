@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\NewDeviceSignIn;
 use App\Services\AuditLogger;
 use App\Services\BrowserSessions;
+use App\Services\KeyedHash;
 use App\Services\SessionPolicy;
 use App\Services\SessionTermination;
 use Illuminate\Auth\Events\Failed;
@@ -48,6 +49,7 @@ class RecordAuthenticationActivity
         private AuditLogger $audit,
         private BrowserSessions $sessions,
         private SessionPolicy $policy,
+        private KeyedHash $keyedHash,
     ) {}
 
     public function handleLogin(Login $event): void
@@ -155,7 +157,13 @@ class RecordAuthenticationActivity
 
     public function handleTwoFactorChallenged(TwoFactorAuthenticationChallenged $event): void
     {
-        $this->audit->record('mfa.challenge.issued', AuditOutcome::Success, $this->asUser($event->user));
+        $user = $this->asUser($event->user);
+
+        if ($user !== null && request()->hasSession()) {
+            $this->policy->startChallenge(request()->session(), $user);
+        }
+
+        $this->audit->record('mfa.challenge.issued', AuditOutcome::Success, $user);
     }
 
     public function handleTwoFactorFailed(TwoFactorAuthenticationFailed $event): void
@@ -228,7 +236,7 @@ class RecordAuthenticationActivity
             return ['email' => $email];
         }
 
-        return ['email_hash' => hash_hmac('sha256', $email, (string) config('app.key'))];
+        return ['email_hash' => $this->keyedHash->of($email)];
     }
 
     private function asUser(mixed $user): ?User

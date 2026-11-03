@@ -47,10 +47,26 @@ class SecondFactor
             return false;
         }
 
-        return $this->provider->verify(
-            Fortify::currentEncrypter()->decrypt($user->two_factor_secret),
-            (string) preg_replace('/\s+/', '', $code),
-        );
+        // A secret that cannot be decrypted (for example after a key change)
+        // matches no code; it is reported, not an error for the user.
+        try {
+            $secret = Fortify::currentEncrypter()->decrypt($user->two_factor_secret);
+        } catch (DecryptException $exception) {
+            report($exception);
+
+            return false;
+        }
+
+        return $this->provider->verify($secret, (string) preg_replace('/\s+/', '', $code));
+    }
+
+    /**
+     * How many unused recovery codes the user has, read safely: codes that
+     * cannot be read count as none.
+     */
+    public function remainingRecoveryCodes(User $user): int
+    {
+        return count($this->storedCodes($user)['codes'] ?? []);
     }
 
     /**

@@ -14,6 +14,7 @@ use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
@@ -499,14 +500,14 @@ it('alerts the user for each new lock, with the time the pause ends', function (
     $user = User::factory()->withTwoFactor()->create();
 
     startAttemptWindow();
-    $this->travel(13)->minutes();
     lockSignInCodes($user);
+    $firstPauseEnds = app(AccountAttemptLimiter::class)->unlocksAt(SecondFactorCheck::AT_SIGN_IN, $user);
 
-    $this->travel(2)->minutes(); // the next window
+    $this->travel(2 * AccountAttemptLimiter::DECAY_SECONDS)->seconds(); // long after the pause
     lockSignInCodes($user);
 
     Notification::assertSentToTimes($user, SignInCodesLocked::class, 2);
-    Notification::assertSentTo($user, SignInCodesLocked::class, fn (SignInCodesLocked $notification): bool => $notification->pausedUntil?->equalTo(now()->startOfDay()->addSeconds(AccountAttemptLimiter::DECAY_SECONDS * 2)) === true);
+    Notification::assertSentTo($user, SignInCodesLocked::class, fn (SignInCodesLocked $notification): bool => $notification->pausedUntil?->equalTo($firstPauseEnds) === true);
 });
 
 it('still answers a locked sign-in normally when the alert cannot be sent', function () {
@@ -516,12 +517,13 @@ it('still answers a locked sign-in normally when the alert cannot be sent', func
     $user = User::factory()->withTwoFactor()->create();
 
     startAttemptWindow();
-    lockSignInCodes($user, AccountAttemptLimiter::MAX_ATTEMPTS);
+    lockSignInCodes($user, AccountAttemptLimiter::MAX_ATTEMPTS - 1);
 
-    // This guess reaches the limit, so it is the one that sends the alert.
+    // This is the last wrong code allowed, so it is the one that sends the alert.
     startTwoFactorLogin($user);
     $this->post(route('two-factor.login.store'), ['code' => '000000'])
-        ->assertSessionHasErrors(['code' => 'Too many incorrect codes. Try again in 14 minutes.']);
+        ->assertRedirect(route('two-factor.login'))
+        ->assertSessionHasErrors(['code' => 'The provided two factor authentication code was invalid.']);
 });
 
 it('treats unreadable stored recovery codes as no codes, not as an error', function () {
@@ -597,8 +599,93 @@ it('treats recovery codes that cannot be decrypted as no codes, not as an error'
     $user = User::factory()->withTwoFactor()->create();
     DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
 
-    $this->actingAs($user)
+    $this->actingAs($user->fresh())
         ->withSession(['auth.password_confirmed_at' => time()])
         ->postJson(route('security.second-factor.confirm'), ['recovery_code' => 'abcdefghij-klmnopqrst'])
         ->assertJsonValidationErrors(['recovery_code' => 'That recovery code is not valid.']);
+});
+
+it('ends a code challenge begun with the old password once the password is reset', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+
+    // The real user resets the password meanwhile.
+    $this->post(route('password.update'), [
+        'token' => Password::broker()->createToken($user),
+        'email' => $user->email,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ])->assertSessionHasNoErrors();
+
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('email');
+
+    $this->assertGuest();
+});
+
+it('ends a code challenge that was left unfinished for too long', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+    $this->travel(config('crms.auth.challenge_timeout') + 1)->minutes();
+
+    $this->get(route('two-factor.login'))->assertRedirect(route('login'));
+
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
+});
+
+it('does not let a linked authenticator be confirmed again', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('two-factor.confirm'), ['code' => currentAuthenticatorCode($user)])
+        ->assertForbidden();
+});
+
+it('treats an authenticator secret that cannot be decrypted as matching no code', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_secret' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->postJson(route('security.second-factor.confirm'), ['code' => '123456'])
+        ->assertJsonValidationErrors('code');
+});
+
+it('still shows the account pages when the recovery codes cannot be read', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())->get(route('dashboard'))->assertOk();
+    $this->withSession(['auth.password_confirmed_at' => time()])->get(route('security.show'))->assertOk();
+});
+
+it('refuses to replace the authenticator with a recovery code another request has just used', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+    $usedElsewhere = false;
+
+    // Just after this request has checked the code, another request uses it.
+    DB::listen(function (QueryExecuted $query) use (&$usedElsewhere, $user, $recoveryCode): void {
+        if ($usedElsewhere || ! readsRecoveryCodes($query)) {
+            return;
+        }
+
+        $usedElsewhere = true;
+        app(SecondFactor::class)->consumeRecoveryCode(User::find($user->id), $recoveryCode);
+    });
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => $recoveryCode])
+        ->assertSessionHasErrors('recovery_code');
+
+    expect($usedElsewhere)->toBeTrue()
+        ->and($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeTrue();
 });

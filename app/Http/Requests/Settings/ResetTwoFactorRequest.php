@@ -10,8 +10,9 @@ namespace App\Http\Requests\Settings;
 class ResetTwoFactorRequest extends SecondFactorRequest
 {
     /**
-     * The reset clears every recovery code in its own transaction, so a
-     * reset that fails leaves the user's codes untouched.
+     * The reset uses the recovery code up in its own transaction
+     * (AccountLifecycle::resetTwoFactor), so a reset that fails leaves the
+     * user's codes untouched.
      */
     protected function usesUpRecoveryCode(): bool
     {

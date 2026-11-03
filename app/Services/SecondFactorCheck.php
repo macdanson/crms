@@ -63,7 +63,7 @@ class SecondFactorCheck
         ]);
 
         throw ValidationException::withMessages([
-            $field => $this->limiter->lockedMessage('codes'),
+            $field => $this->limiter->lockedMessage($where, $user, 'codes'),
         ]);
     }
 
@@ -74,6 +74,6 @@ class SecondFactorCheck
      */
     private function alert(User $user): void
     {
-        rescue(fn () => $user->notify(new SignInCodesLocked($this->limiter->unlocksAt())), report: true);
+        rescue(fn () => $user->notify(new SignInCodesLocked($this->limiter->unlocksAt(self::AT_SIGN_IN, $user))), report: true);
     }
 }

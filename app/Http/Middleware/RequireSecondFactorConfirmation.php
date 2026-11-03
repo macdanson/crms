@@ -14,7 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
  * only protects with password confirmation. Once an authenticator is
  * confirmed:
  *
- * - its secret and QR code are never shown again;
+ * - its secret and QR code are never shown again, and it cannot be
+ *   "confirmed" again (which would test codes without any limit);
  * - viewing or replacing recovery codes, or switching multi-factor
  *   authentication off, needs a recent proof of the second factor.
  *
@@ -23,9 +24,9 @@ use Symfony\Component\HttpFoundation\Response;
 class RequireSecondFactorConfirmation
 {
     /**
-     * Routes that reveal the authenticator secret.
+     * Routes only used while enrolling.
      */
-    private const SECRET_ROUTES = ['two-factor.secret-key', 'two-factor.qr-code'];
+    private const ENROLMENT_ROUTES = ['two-factor.secret-key', 'two-factor.qr-code', 'two-factor.confirm'];
 
     /**
      * Routes that need a recent proof of the second factor.
@@ -51,8 +52,8 @@ class RequireSecondFactorConfirmation
             return $next($request);
         }
 
-        if ($request->routeIs(...self::SECRET_ROUTES)) {
-            abort(403, 'The secret of a linked authenticator is never shown again.');
+        if ($request->routeIs(...self::ENROLMENT_ROUTES)) {
+            abort(403, 'The authenticator is already linked.');
         }
 
         if ($request->routeIs(...self::PROTECTED_ROUTES) && ! $this->secondFactor->isRecentlyConfirmed($request->session())) {

@@ -41,8 +41,10 @@ class AppServiceProvider extends ServiceProvider
         // Breached-password screening calls an external k-anonymity API, so it
         // is limited to production where outbound access is approved.
         Password::defaults(function (): Password {
+            // bcrypt uses only the first 72 bytes; PasswordValidationRules
+            // also limits the length in bytes.
             $rule = Password::min(12)
-                ->max(128)
+                ->max(72)
                 ->letters()
                 ->mixedCase()
                 ->numbers()

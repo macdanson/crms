@@ -43,6 +43,6 @@ class PasswordCheck
             ['purpose' => $purpose],
         );
 
-        return $locked ? $this->limiter->lockedMessage('passwords') : $wrongPasswordMessage;
+        return $locked ? $this->limiter->lockedMessage('password', $user, 'passwords') : $wrongPasswordMessage;
     }
 }
