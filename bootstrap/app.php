@@ -23,14 +23,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Appended so it runs after TrustProxies, which it relies on.
-        $middleware->append(AssignRequestId::class);
+        // Appended so they run after TrustProxies, which they rely on. Being
+        // global, the security headers also cover responses that a later
+        // middleware returns early (session ended, CSRF expired, 404).
+        $middleware->append([AssignRequestId::class, SetSecurityHeaders::class]);
 
         $middleware->web(append: [
             EnforceSessionTimeouts::class,
             EnsureAccountIsActive::class,
             EnsureSessionIsCurrent::class,
-            SetSecurityHeaders::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);

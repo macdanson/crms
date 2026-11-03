@@ -101,7 +101,7 @@ return [
     |
     */
 
-    'middleware' => ['web', 'auth.session', 'throttle:fortify'],
+    'middleware' => ['web', 'throttle:fortify'],
 
     /*
     |--------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\SessionTermination;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
@@ -10,8 +11,10 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Applies browser hardening headers (developer guide §16).
  *
- * Authenticated responses are marked no-store so sensitive pages are not kept
- * by shared browsers or intermediary caches.
+ * Authenticated responses, and the response that ends a session, are marked
+ * no-store so sensitive pages are not kept by shared browsers or
+ * intermediary caches. Registered as global middleware so it wraps every
+ * response, including those other middleware return early.
  */
 class SetSecurityHeaders
 {
@@ -45,12 +48,19 @@ class SetSecurityHeaders
             $headers->set('Content-Security-Policy', $this->contentSecurityPolicy());
         }
 
-        if ($request->user() !== null || $request->routeIs('password.reset', 'activation.create', 'two-factor.login')) {
+        if ($this->isSensitive($request)) {
             $headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
             $headers->set('Pragma', 'no-cache');
         }
 
         return $response;
+    }
+
+    private function isSensitive(Request $request): bool
+    {
+        return $request->user() !== null
+            || SessionTermination::isTerminating($request)
+            || $request->routeIs('password.reset', 'activation.create', 'two-factor.login');
     }
 
     private function contentSecurityPolicy(): string

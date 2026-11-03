@@ -63,6 +63,8 @@ export function useIdleTimeout() {
     let expiring = false;
     let heartbeatInFlight = false;
     let nextHeartbeatAllowedAt = 0;
+    // The user asked to stay signed in while a heartbeat was already in flight.
+    let heartbeatRequested = false;
 
     const activityEvents = [
         'pointerdown',
@@ -88,8 +90,19 @@ export function useIdleTimeout() {
         return !heartbeatInFlight && Date.now() >= nextHeartbeatAllowedAt;
     }
 
-    async function sendHeartbeat(): Promise<void> {
-        if (!canSendHeartbeat()) {
+    /**
+     * Tell the server the user is still working. An explicit request from the
+     * user (`requestedByUser`) skips the retry wait after a failure, and is
+     * sent as soon as a heartbeat already in flight finishes.
+     */
+    async function sendHeartbeat(requestedByUser = false): Promise<void> {
+        if (heartbeatInFlight) {
+            heartbeatRequested ||= requestedByUser;
+
+            return;
+        }
+
+        if (!requestedByUser && !canSendHeartbeat()) {
             return;
         }
 
@@ -116,12 +129,17 @@ export function useIdleTimeout() {
             nextHeartbeatAllowedAt = Date.now() + HEARTBEAT_RETRY_DELAY_MS;
         } finally {
             heartbeatInFlight = false;
+
+            if (heartbeatRequested && !expiring) {
+                heartbeatRequested = false;
+                void sendHeartbeat(true);
+            }
         }
     }
 
     function staySignedIn(): void {
         showWarning.value = false;
-        void sendHeartbeat();
+        void sendHeartbeat(true);
     }
 
     /** Hide the maximum-length warning; it does not come back. */
@@ -185,6 +203,14 @@ export function useIdleTimeout() {
 
             idleLeft = Math.ceil(idleTimeout.value - sinceContact);
 
+            // Checked before any heartbeat: after a long sleep the session
+            // has already ended, and reloading shows the user why.
+            if (idleLeft <= 0) {
+                expire();
+
+                return;
+            }
+
             // User is active but quiet: refresh the server well before expiry.
             if (
                 lastUserActivity > lastServerContact &&
@@ -193,12 +219,6 @@ export function useIdleTimeout() {
                 canSendHeartbeat()
             ) {
                 void sendHeartbeat();
-
-                return;
-            }
-
-            if (idleLeft <= 0) {
-                expire();
 
                 return;
             }

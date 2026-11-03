@@ -43,6 +43,10 @@ class SessionTermination
         $request->session()->regenerateToken();
 
         if ($request->wantsJsonResponse()) {
+            // The browser reloads after a 401 and lands on the sign-in page;
+            // the flashed reason is shown there.
+            $request->session()->flash('status', $message);
+
             return response()->json(['message' => $message], 401);
         }
 

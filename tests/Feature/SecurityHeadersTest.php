@@ -56,3 +56,23 @@ it('keeps the session cookie on links from other sites', function () {
 
     expect($sessionCookie?->getSameSite())->toBe('lax');
 });
+
+it('sends hardening headers on the response that ends a session', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->get(route('dashboard'))
+        ->assertRedirect(route('login'))
+        ->assertHeader('X-Frame-Options', 'DENY')
+        ->assertHeader('X-Content-Type-Options', 'nosniff')
+        ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
+});
+
+it('sends hardening headers on pages that do not exist', function () {
+    $this->get('/no-such-page')
+        ->assertNotFound()
+        ->assertHeader('X-Frame-Options', 'DENY')
+        ->assertHeader('X-Content-Type-Options', 'nosniff');
+});

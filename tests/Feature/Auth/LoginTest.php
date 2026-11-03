@@ -6,7 +6,9 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\NewDeviceSignIn;
 use Database\Factories\UserFactory;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia;
 
@@ -245,4 +247,44 @@ it('records the sign-in under the session the user goes on to use', function () 
     $sessionHash = hash_hmac('sha256', session()->getId(), (string) config('app.key'));
 
     expect(AuditEvent::where('event', 'auth.login')->sole()->session_hash)->toBe($sessionHash);
+});
+
+it('alerts a sign-in to an account unused for longer than devices are remembered', function () {
+    Notification::fake();
+    $userAgent = 'Mozilla/5.0 (Windows NT 10.0) Chrome/130.0';
+    $user = User::factory()->create(['last_login_at' => now()->subDays(120)]);
+    AuditEvent::factory()->for($user)->signIn($userAgent)->daysAgo(120)->create();
+
+    $this->withHeader('User-Agent', $userAgent)
+        ->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+
+    Notification::assertSentToTimes($user, NewDeviceSignIn::class, 1);
+});
+
+it('checks a password even for an unknown email, so both take as long', function () {
+    $hasher = Mockery::mock(app('hash'));
+    $hasher->shouldReceive('check')->once()->passthru();
+    Hash::swap($hasher);
+
+    $this->post(route('login.store'), ['email' => 'nobody@crms.test', 'password' => 'Some-Password-123!'])
+        ->assertSessionHasErrors('email');
+});
+
+it('keeps other sessions signed in when a sign-in upgrades the password hash', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $originalHash = $user->password;
+    Hash::driver('bcrypt')->setRounds(config('hashing.bcrypt.rounds') + 1);
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    app(AuthenticateUser::class)(Request::create('/login', 'POST', [
+        'email' => $user->email,
+        'password' => UserFactory::PASSWORD,
+    ]));
+
+    // Each request loads the user afresh, with the new hash.
+    $user = $user->fresh();
+    expect($user->password)->not->toBe($originalHash);
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
 });

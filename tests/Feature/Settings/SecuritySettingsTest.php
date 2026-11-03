@@ -3,6 +3,7 @@
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\BrowserSessions;
+use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -253,4 +254,43 @@ it('asks for the password again once the confirmation window has passed', functi
     $this->withSession(['auth.password_confirmed_at' => time() - $window - 1])
         ->get(route('security.show'))
         ->assertRedirect(route('password.confirm'));
+});
+
+it('signs out other sessions with any session driver and leaves the password alone', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $passwordHash = $user->password;
+    $otherDeviceStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHas('status', 'All other sessions have been signed out.');
+
+    expect($user->fresh()->password)->toBe($passwordHash)
+        ->and(AuditEvent::where('event', 'auth.sessions.revoked_others')->where('user_id', $user->id)->count())->toBe(1);
+
+    $this->get(route('security.show'))->assertOk();
+
+    $this->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
+        ->get(route('dashboard'))
+        ->assertRedirect(route('login'));
+});
+
+it('signs out other sessions with any session driver after a password change', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $otherDeviceStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => 'Changed-Password-2026!',
+            'password_confirmation' => 'Changed-Password-2026!',
+        ])->assertSessionHasNoErrors();
+
+    $this->get(route('security.show'))->assertOk();
+
+    $this->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
+        ->get(route('dashboard'))
+        ->assertRedirect(route('login'));
 });

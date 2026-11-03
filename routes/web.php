@@ -31,7 +31,7 @@ Route::middleware('guest')->group(function () {
         ->name('activation.store');
 });
 
-Route::middleware(['auth', 'auth.session'])->group(function () {
+Route::middleware('auth')->group(function () {
     Route::post('session/heartbeat', SessionHeartbeatController::class)
         ->middleware('throttle:30,1')
         ->name('session.heartbeat');

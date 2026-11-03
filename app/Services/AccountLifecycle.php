@@ -110,6 +110,9 @@ class AccountLifecycle
             'remember_token' => Str::random(60),
         ])->save();
 
+        // Ends every session even if the account is reactivated before the
+        // session makes another request.
+        $this->policy->endOtherSessions($user);
         $revoked = $this->sessions->revokeAll($user);
 
         $this->audit->record('account.suspended', AuditOutcome::Success, $user, [

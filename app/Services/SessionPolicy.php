@@ -10,6 +10,11 @@ use Illuminate\Support\Str;
  * The session rules in one place (developer guide §6.1, §16): when a session
  * started, when it was last used, when it must end, and whether a security
  * change has made it stale.
+ *
+ * Every action that must sign out a user's other sessions (password change or
+ * reset, "sign out other sessions", authenticator reset, suspension) calls
+ * endOtherSessions(). It works with every session driver and leaves the
+ * password hash alone.
  */
 class SessionPolicy
 {
@@ -92,21 +97,15 @@ class SessionPolicy
     }
 
     /**
-     * Whether the session predates a security change that ended other
-     * sessions. A session without a stamp (signed in before stamps existed)
-     * adopts the current one.
+     * Whether the session was stamped at sign-in and no security change has
+     * ended it since. A session without a stamp is stale: every sign-in
+     * stamps its session, so a missing stamp cannot be trusted.
      */
     public function isCurrent(Session $session, User $user): bool
     {
-        $stamp = $this->stampFor($user);
+        $sessionStamp = $session->get(self::STAMP);
 
-        if (! $session->has(self::STAMP)) {
-            $session->put(self::STAMP, $stamp);
-
-            return true;
-        }
-
-        return hash_equals($stamp, (string) $session->get(self::STAMP));
+        return is_string($sessionStamp) && hash_equals($this->stampFor($user), $sessionStamp);
     }
 
     /**
@@ -124,7 +123,10 @@ class SessionPolicy
         return (int) $session->get(self::AUTHENTICATED_AT, now()->getTimestamp());
     }
 
-    private function stampFor(User $user): string
+    /**
+     * The stamp a session of this user must carry to stay signed in.
+     */
+    public function stampFor(User $user): string
     {
         if ($user->session_stamp === null) {
             $user->forceFill(['session_stamp' => Str::random(64)])->saveQuietly();

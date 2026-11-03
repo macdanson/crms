@@ -165,3 +165,38 @@ it('tells the page how long the session has before its maximum length', function
             ->where('session.absolute_remaining', 20 * 60)
             ->where('session.absolute_warning', config('crms.auth.absolute_warning')));
 });
+
+it('tells a user whose heartbeat finds the session ended why they were signed out', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+
+    $this->get(route('login'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('flash.status', 'You were signed out after a period of inactivity.'));
+});
+
+it('signs out a session that was never stamped at sign-in', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->flushSession();
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+});
+
+it('signs out a suspended user even if the account is reactivated first', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $lifecycle = app(AccountLifecycle::class);
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $lifecycle->suspend($user, 'Investigation');
+    $lifecycle->reactivate($user);
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+});

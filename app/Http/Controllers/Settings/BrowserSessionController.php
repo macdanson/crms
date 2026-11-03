@@ -8,9 +8,9 @@ use App\Http\Requests\Settings\RevokeOtherSessionsRequest;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\BrowserSessions;
+use App\Services\SessionPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 /**
  * Lets users sign out sessions on other devices (developer guide §16).
@@ -20,6 +20,7 @@ class BrowserSessionController extends Controller
     public function __construct(
         private BrowserSessions $sessions,
         private AuditLogger $audit,
+        private SessionPolicy $policy,
     ) {}
 
     public function destroy(Request $request, string $session): RedirectResponse
@@ -45,11 +46,16 @@ class BrowserSessionController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // Rotates the stored password hash so other sessions fail the
-        // AuthenticateSession check, then removes their stored session rows.
-        Auth::logoutOtherDevices($request->string('password')->toString());
+        // The password was checked by RevokeOtherSessionsRequest. The stamp
+        // ends other sessions with any session driver; deleting the stored
+        // sessions (database driver only) also clears the session list.
+        $this->policy->endOtherSessions($user, $request->session());
 
-        $this->sessions->revokeOthers($user, $request->session()->getId());
+        $revoked = $this->sessions->revokeOthers($user, $request->session()->getId());
+
+        $this->audit->record('auth.sessions.revoked_others', AuditOutcome::Success, $user, [
+            'sessions_revoked' => $revoked,
+        ]);
 
         return back()->with('status', 'All other sessions have been signed out.');
     }

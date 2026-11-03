@@ -14,7 +14,6 @@ use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
-use Illuminate\Auth\Events\OtherDeviceLogout;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
 use Illuminate\Support\Facades\Auth;
@@ -125,11 +124,6 @@ class RecordAuthenticationActivity
         $this->audit->record('auth.logout', AuditOutcome::Success, $event->user instanceof User ? $event->user : null);
     }
 
-    public function handleOtherDeviceLogout(OtherDeviceLogout $event): void
-    {
-        $this->audit->record('auth.sessions.revoked_others', AuditOutcome::Success, $event->user instanceof User ? $event->user : null);
-    }
-
     public function handlePasswordResetLinkSent(PasswordResetLinkSent $event): void
     {
         $this->audit->record('auth.password_reset.requested', AuditOutcome::Success, $event->user instanceof User ? $event->user : null);
@@ -143,10 +137,13 @@ class RecordAuthenticationActivity
     public function handlePasswordUpdated(PasswordUpdatedViaController $event): void
     {
         $user = $event->user;
+        $session = request()->hasSession() ? request()->session() : null;
 
-        $revoked = request()->hasSession()
-            ? $this->sessions->revokeOthers($user, request()->session()->getId())
-            : 0;
+        $this->policy->endOtherSessions($user, $session);
+
+        $revoked = $session !== null
+            ? $this->sessions->revokeOthers($user, $session->getId())
+            : $this->sessions->revokeAll($user);
 
         $this->audit->record('auth.password.changed', AuditOutcome::Success, $user, [
             'sessions_revoked' => $revoked,
@@ -195,8 +192,9 @@ class RecordAuthenticationActivity
 
     /**
      * Alert the user when a sign-in comes from a browser that has not been
-     * used successfully on their account recently. The very first sign-in
-     * after activation is not alerted.
+     * used successfully on their account recently. Only the very first
+     * sign-in to the account is not alerted; an account unused for a long
+     * time is alerted whatever the device.
      */
     private function notifyIfNewDevice(User $user, string $userAgent, ?string $ipAddress): void
     {
@@ -204,12 +202,8 @@ class RecordAuthenticationActivity
             return;
         }
 
-        $previousLogins = AuditEvent::query()
-            ->where('user_id', $user->getKey())
-            ->where('event', 'auth.login')
-            ->where('occurred_at', '>=', now()->subDays(self::RECOGNISED_DEVICE_DAYS));
-
-        if (! (clone $previousLogins)->exists()) {
+        // Read before last_login_at is updated for this sign-in.
+        if ($user->last_login_at === null) {
             return;
         }
 
@@ -217,7 +211,10 @@ class RecordAuthenticationActivity
         // browser and platform rather than the exact string.
         $agent = $this->sessions->describeAgent($userAgent);
 
-        $recognised = $previousLogins
+        $recognised = AuditEvent::query()
+            ->where('user_id', $user->getKey())
+            ->where('event', 'auth.login')
+            ->where('occurred_at', '>=', now()->subDays(self::RECOGNISED_DEVICE_DAYS))
             ->whereNotNull('user_agent')
             ->distinct()
             ->limit(200)

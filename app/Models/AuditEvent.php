@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\AuditOutcome;
+use Database\Factories\AuditEventFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -28,7 +30,8 @@ use LogicException;
  */
 class AuditEvent extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<AuditEventFactory> */
+    use HasFactory, HasUuids;
 
     public $timestamps = false;
 

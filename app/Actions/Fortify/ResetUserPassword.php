@@ -5,6 +5,7 @@ namespace App\Actions\Fortify;
 use App\Enums\AccountStatus;
 use App\Models\User;
 use App\Services\BrowserSessions;
+use App\Services\SessionPolicy;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -14,7 +15,10 @@ class ResetUserPassword implements ResetsUserPasswords
 {
     use PasswordValidationRules;
 
-    public function __construct(private BrowserSessions $sessions) {}
+    public function __construct(
+        private BrowserSessions $sessions,
+        private SessionPolicy $policy,
+    ) {}
 
     /**
      * Validate and reset the user's forgotten password.
@@ -45,6 +49,7 @@ class ResetUserPassword implements ResetsUserPasswords
 
         $user->forceFill($attributes)->save();
 
+        $this->policy->endOtherSessions($user);
         $this->sessions->revokeAll($user);
     }
 }

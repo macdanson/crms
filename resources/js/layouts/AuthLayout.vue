@@ -5,10 +5,12 @@ import { ElAlert, ElIcon } from 'element-plus';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import AppLogoMark from '@/components/AppLogoMark.vue';
+import IdleTimeoutDialog from '@/components/IdleTimeoutDialog.vue';
 
 const page = usePage();
 const product = computed(() => page.props.product);
 const flash = computed(() => page.props.flash);
+const isSignedIn = computed(() => page.props.session != null);
 const year = new Date().getFullYear();
 
 const assurances = [
@@ -131,5 +133,7 @@ const assurances = [
                 may lead to disciplinary or criminal action.
             </footer>
         </main>
+
+        <IdleTimeoutDialog v-if="isSignedIn" />
     </div>
 </template>

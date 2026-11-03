@@ -3,6 +3,7 @@
 use App\Enums\AccountStatus;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
 use App\Models\User;
+use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Hash;
@@ -95,4 +96,21 @@ it('states the reset link expiry that the token broker enforces', function () {
     config(['auth.passwords.users.expire' => 30]);
 
     expect(PasswordResetLinkRequestedResponse::message())->toContain('expires in 30 minutes');
+});
+
+it('signs out every session with any session driver after a password reset', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $signedInStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker()->createToken($user),
+        'email' => $user->email,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ])->assertRedirect(route('login'));
+
+    $this->actingAs($user->fresh())
+        ->withSession([SessionPolicy::STAMP => $signedInStamp])
+        ->get(route('dashboard'))
+        ->assertRedirect(route('login'));
 });
