@@ -11,7 +11,6 @@ use App\Services\AuditLogger;
 use App\Services\SecondFactor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response;
-use Illuminate\Validation\ValidationException;
 
 /**
  * The user proves their second factor before viewing or replacing recovery
@@ -25,18 +24,11 @@ class SecondFactorConfirmationController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $usedRecoveryCode = $request->filled('recovery_code');
-
-        // A recovery code is single-use, whatever it was used for; another
-        // request may have used it since it was validated.
-        if ($usedRecoveryCode && ! $secondFactor->consumeRecoveryCode($user, $request->string('recovery_code')->toString())) {
-            throw ValidationException::withMessages(['recovery_code' => 'That recovery code is not valid.']);
-        }
-
+        // A recovery code given here was used up by the request's validation.
         $secondFactor->markConfirmed($request->session());
 
         $audit->record('mfa.step_up.passed', AuditOutcome::Success, $user, [
-            'method' => $usedRecoveryCode ? 'recovery_code' : 'authenticator',
+            'method' => $request->filled('recovery_code') ? 'recovery_code' : 'authenticator',
         ]);
 
         return ResponseFormat::wantsJson($request) ? response()->noContent() : back();

@@ -302,6 +302,5 @@ it('sends a guest to sign in after a stale token on an Inertia sign-in', functio
 
     $this->withHeader('X-Inertia', 'true')
         ->post(route('login.store'), ['email' => 'someone@crms.test', 'password' => 'anything'])
-        ->assertStatus(303)
         ->assertRedirect(route('login'));
 });

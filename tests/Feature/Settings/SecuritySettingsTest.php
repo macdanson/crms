@@ -1,6 +1,6 @@
 <?php
 
-use App\Enums\AuditOutcome;
+use App\Enums\AttemptResult;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountAttemptLimiter;
@@ -370,7 +370,7 @@ it('counts password guesses made in parallel before checking any of them', funct
 
     $guess();
 
-    $checked = collect($outcomes)->filter(fn (AuditOutcome $outcome): bool => $outcome === AuditOutcome::Failure);
+    $checked = collect($outcomes)->filter(fn (AttemptResult $result): bool => $result === AttemptResult::Failed);
 
     expect($checked)->toHaveCount(AccountAttemptLimiter::MAX_ATTEMPTS);
 });
@@ -394,4 +394,42 @@ it('keeps the old password if other sessions cannot be ended', function () {
         ->assertServerError();
 
     expect($user->fresh()->password)->toBe($passwordHash);
+});
+
+it('does not use up a password attempt when the new password is rejected anyway', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => 'Wrong-Password-1!',
+            'password' => 'weak',
+            'password_confirmation' => 'weak',
+        ])
+        ->assertSessionHasErrors('password');
+
+    expect(AuditEvent::where('event', 'auth.password_check.failed')->exists())->toBeFalse();
+});
+
+it('sends an Inertia DELETE that needs password confirmation on with GET', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withHeader('X-Inertia', 'true')
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertStatus(303)
+        ->assertRedirect(route('password.confirm'));
+});
+
+it('says one minute, not one minutes, near the end of a lock', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    foreach (range(0, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        $limiter->attempt('password', $user, fn (): bool => false);
+    }
+
+    $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 30)->seconds();
+
+    expect($limiter->lockedMessage('password', $user, 'passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
 });

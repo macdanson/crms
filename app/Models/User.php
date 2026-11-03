@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AccountStatus;
 use App\Notifications\ResetPasswordLink;
+use App\Services\SecondFactor;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -13,6 +14,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Laravel\Fortify\Events\TwoFactorAuthenticationFailed;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -63,6 +66,26 @@ class User extends Authenticatable
     public static function normaliseEmail(string $email): string
     {
         return Str::lower(trim($email));
+    }
+
+    /**
+     * Use up a recovery code given at the sign-in challenge (Fortify calls
+     * this after finding the code). Done atomically, so two sign-ins racing
+     * with the same code cannot both succeed.
+     *
+     * @param  string  $code
+     *
+     * @throws ValidationException
+     */
+    public function replaceRecoveryCode($code): void
+    {
+        if (! app(SecondFactor::class)->consumeRecoveryCode($this, $code)) {
+            TwoFactorAuthenticationFailed::dispatch($this);
+
+            throw ValidationException::withMessages([
+                'recovery_code' => __('The provided two factor recovery code was invalid.'),
+            ]);
+        }
     }
 
     /**

@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
-use App\Enums\AuditOutcome;
+use App\Enums\AttemptResult;
 use App\Models\User;
 use Closure;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 /**
  * Limits guesses at a secret (password, authenticator code) made from inside
@@ -33,33 +34,34 @@ class AccountAttemptLimiter
      *
      * @param  string  $secret  What is being guessed, e.g. "password".
      * @param  Closure(): bool  $check
-     * @return AuditOutcome Success, Failure (wrong guess) or Blocked (limit reached).
      */
-    public function attempt(string $secret, User $user, Closure $check): AuditOutcome
+    public function attempt(string $secret, User $user, Closure $check): AttemptResult
     {
         $key = $this->key($secret, $user);
 
         if (RateLimiter::hit($key, self::DECAY_SECONDS) > self::MAX_ATTEMPTS) {
-            return AuditOutcome::Blocked;
+            return AttemptResult::Locked;
         }
 
         if (! $check()) {
-            return AuditOutcome::Failure;
+            return AttemptResult::Failed;
         }
 
         RateLimiter::clear($key);
 
-        return AuditOutcome::Success;
+        return AttemptResult::Passed;
     }
 
     /**
      * The message shown once the limit is reached.
+     *
+     * @param  string  $guesses  What was guessed, in the plural, e.g. "passwords".
      */
     public function lockedMessage(string $secret, User $user, string $guesses): string
     {
         $minutes = max(1, (int) ceil(RateLimiter::availableIn($this->key($secret, $user)) / 60));
 
-        return "Too many incorrect {$guesses}. Try again in {$minutes} minutes.";
+        return "Too many incorrect {$guesses}. Try again in {$minutes} ".Str::plural('minute', $minutes).'.';
     }
 
     private function key(string $secret, User $user): string

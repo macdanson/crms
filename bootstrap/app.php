@@ -25,6 +25,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Redirects after a PUT/PATCH/DELETE: inertia-laravel registers its
+        // EnsureGetOnRedirect as global middleware, outside everything below,
+        // so every 302 answering a non-GET Inertia request becomes a 303 and
+        // is followed with GET. That covers redirects from any middleware
+        // and from the exception handler, so none of them set 303 by hand.
+
         // Appended so they run after TrustProxies, which they rely on. Being
         // global, the security headers also cover responses that a later
         // middleware returns early (session ended, CSRF expired, 404).
@@ -74,12 +80,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // An expired CSRF token. If the user is still signed in (for example
             // they signed in again in another tab), send them back to try
-            // again; otherwise the session timed out. A 303 makes the browser
-            // follow with GET whatever the method of the failed request.
+            // again; otherwise the session timed out.
             if ($status === 419) {
                 return $request->user() !== null
-                    ? back(303)->with('error', 'This page had expired, so your last action was not saved. Please try again.')
-                    : redirect()->route('login', status: 303)->with('status', 'Your session expired. Please sign in again.');
+                    ? back()->with('error', 'This page had expired, so your last action was not saved. Please try again.')
+                    : redirect()->route('login')->with('status', 'Your session expired. Please sign in again.');
             }
 
             if ($status === 429 && $request->header('X-Inertia')) {

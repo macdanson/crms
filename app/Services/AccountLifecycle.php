@@ -75,15 +75,11 @@ class AccountLifecycle
             ->where('status', AccountStatus::Pending)
             ->first();
 
-        $broker = $this->invitationBroker();
+        $activated = $user !== null && DB::transaction(function () use ($user, $token, $password): bool {
+            if (! $this->claimInvitation($user, $token)) {
+                return false;
+            }
 
-        if ($user === null || ! $broker->tokenExists($user, $token)) {
-            $this->audit->record('account.activation.failed', AuditOutcome::Failure, $user);
-
-            return false;
-        }
-
-        DB::transaction(function () use ($user, $password, $broker): void {
             $user->forceFill([
                 'password' => $password,
                 'password_changed_at' => now(),
@@ -92,8 +88,14 @@ class AccountLifecycle
                 'remember_token' => Str::random(60),
             ])->save();
 
-            $broker->deleteToken($user);
+            return true;
         });
+
+        if (! $activated) {
+            $this->audit->record('account.activation.failed', AuditOutcome::Failure, $user);
+
+            return false;
+        }
 
         $this->audit->record('account.activated', AuditOutcome::Success, $user);
 
@@ -172,6 +174,23 @@ class AccountLifecycle
             'actor_id' => $actor?->getKey(),
             'sessions_revoked' => $revoked,
         ]);
+    }
+
+    /**
+     * Use up the user's activation link if the token is valid. Only the
+     * request that deletes the stored token may use the link, so two
+     * requests with the same link cannot both activate the account.
+     */
+    private function claimInvitation(User $user, string $token): bool
+    {
+        $tokens = DB::table((string) config('auth.passwords.invitations.table'));
+        $storedToken = (clone $tokens)->where('email', $user->email)->value('token');
+
+        if ($storedToken === null || ! $this->invitationBroker()->tokenExists($user, $token)) {
+            return false;
+        }
+
+        return (clone $tokens)->where('email', $user->email)->where('token', $storedToken)->delete() === 1;
     }
 
     private function invitationBroker(): PasswordBroker

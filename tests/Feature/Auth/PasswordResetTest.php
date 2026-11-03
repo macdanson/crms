@@ -147,3 +147,15 @@ it('hashes once for an unknown email address, as the broker does for an account'
 
     $this->post(route('password.email'), ['email' => 'nobody@crms.test'])->assertSessionHasNoErrors();
 });
+
+it('hashes for a known email whose last link is too recent to send another', function () {
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email])->assertSessionHasNoErrors();
+
+    $hasher = Mockery::mock(app('hash'));
+    $hasher->shouldReceive('make')->once()->passthru();
+    Hash::swap($hasher);
+
+    $this->post(route('password.email'), ['email' => $user->email])->assertSessionHasNoErrors();
+});

@@ -7,6 +7,7 @@ use App\Services\AccountLifecycle;
 use App\Services\SecondFactor;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
@@ -300,4 +301,19 @@ it('does not sign out other sessions when abandoning an unconfirmed enrolment', 
         ->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
         ->get(route('dashboard'))
         ->assertOk();
+});
+
+it('lets only one of two racing sign-ins use the same recovery code', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+
+    // Both sign-in challenges found the code before either used it up.
+    $firstChallengeUser = User::find($user->id);
+    $secondChallengeUser = User::find($user->id);
+
+    $firstChallengeUser->replaceRecoveryCode($recoveryCode);
+
+    expect(fn () => $secondChallengeUser->replaceRecoveryCode($recoveryCode))->toThrow(ValidationException::class)
+        ->and($user->fresh()->recoveryCodes())->not->toContain($recoveryCode)
+        ->and(AuditEvent::where('event', 'mfa.challenge.failed')->where('user_id', $user->id)->count())->toBe(1);
 });

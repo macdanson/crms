@@ -51,8 +51,7 @@ class SessionTermination
             return response()->json(['message' => $message], 401);
         }
 
-        // 303, so the browser follows with GET whatever the request method.
-        return redirect()->route('login', status: 303)->with('status', $message);
+        return redirect()->route('login')->with('status', $message);
     }
 
     /**

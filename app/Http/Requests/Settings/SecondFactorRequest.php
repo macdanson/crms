@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Settings;
 
+use App\Enums\AttemptResult;
 use App\Enums\AuditOutcome;
 use App\Models\User;
 use App\Services\AccountAttemptLimiter;
@@ -14,7 +15,8 @@ use Illuminate\Validation\Validator;
 
 /**
  * A request that must carry proof of the user's second factor: the code
- * from their authenticator app, or one of their recovery codes.
+ * from their authenticator app, or one of their recovery codes. A recovery
+ * code is used up once the request has passed validation.
  */
 class SecondFactorRequest extends FormRequest
 {
@@ -68,13 +70,13 @@ class SecondFactorRequest extends FormRequest
 
                 // Limited per account, not only per request, so a hijacked
                 // session cannot keep guessing codes.
-                $outcome = $limiter->attempt('second-factor', $user, fn (): bool => $this->hasValidSecondFactor());
+                $result = $limiter->attempt('second-factor', $user, fn (): bool => $this->proveSecondFactor());
 
-                if ($outcome === AuditOutcome::Success) {
+                if ($result === AttemptResult::Passed) {
                     return;
                 }
 
-                if ($outcome === AuditOutcome::Blocked) {
+                if ($result === AttemptResult::Locked) {
                     app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user);
                     $validator->errors()->add($field, $limiter->lockedMessage('second-factor', $user, 'codes'));
 
@@ -104,12 +106,17 @@ class SecondFactorRequest extends FormRequest
         return $this->user();
     }
 
-    private function hasValidSecondFactor(): bool
+    /**
+     * Check the code. A recovery code is used up by the check itself, in one
+     * atomic step, so a code that a parallel request has just used counts
+     * as a wrong guess.
+     */
+    private function proveSecondFactor(): bool
     {
         $secondFactor = app(SecondFactor::class);
 
         if ($this->filled('recovery_code')) {
-            return $secondFactor->matchingRecoveryCode($this->challengedUser(), $this->string('recovery_code')->toString()) !== null;
+            return $secondFactor->consumeRecoveryCode($this->challengedUser(), $this->string('recovery_code')->toString());
         }
 
         return $secondFactor->isValidCode($this->challengedUser(), $this->string('code')->toString());

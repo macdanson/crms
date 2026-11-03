@@ -155,3 +155,25 @@ it('states the activation link expiry that the token broker enforces', function 
 
     expect(implode(' ', $mail->outroLines))->toContain('expires in 2 hours');
 });
+
+it('activates the account once when two requests use the same link at the same time', function () {
+    [$user, $token] = inviteUser();
+    $lifecycle = app(AccountLifecycle::class);
+    $secondRequestActivated = null;
+    $secondRequestStarted = false;
+
+    // The second request arrives while the first is saving the account.
+    User::updating(function () use (&$secondRequestActivated, &$secondRequestStarted, $lifecycle, $user, $token): void {
+        if ($secondRequestStarted) {
+            return;
+        }
+
+        $secondRequestStarted = true;
+        $secondRequestActivated = $lifecycle->activate($user->email, $token, 'Second-Password-2026!');
+    });
+
+    expect($lifecycle->activate($user->email, $token, 'First-Password-2026!'))->toBeTrue()
+        ->and($secondRequestActivated)->toBeFalse()
+        ->and(Hash::check('First-Password-2026!', $user->fresh()->password))->toBeTrue()
+        ->and(AuditEvent::where('event', 'account.activated')->count())->toBe(1);
+});

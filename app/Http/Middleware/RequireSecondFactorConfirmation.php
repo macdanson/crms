@@ -60,8 +60,7 @@ class RequireSecondFactorConfirmation
 
             return ResponseFormat::wantsJson($request)
                 ? response()->json(['message' => $message, 'second_factor_required' => true], 423)
-                // 303, so a refused DELETE or POST is followed with GET.
-                : back(303)->with('error', $message);
+                : back()->with('error', $message);
         }
 
         return $next($request);

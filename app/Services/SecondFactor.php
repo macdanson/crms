@@ -4,9 +4,10 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Contracts\Session\Session;
-use Illuminate\Support\Facades\Cache;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
+use Laravel\Fortify\Events\RecoveryCodeReplaced;
 use Laravel\Fortify\Fortify;
+use Laravel\Fortify\RecoveryCode;
 
 /**
  * Checks a user's second factor (an authenticator code or a recovery code)
@@ -45,39 +46,54 @@ class SecondFactor
     }
 
     /**
-     * The user's unused recovery code that matches, or null.
-     */
-    public function matchingRecoveryCode(User $user, string $recoveryCode): ?string
-    {
-        if ($user->two_factor_recovery_codes === null) {
-            return null;
-        }
-
-        $recoveryCode = trim($recoveryCode);
-
-        return collect($user->recoveryCodes())
-            ->first(fn (string $code): bool => hash_equals($code, $recoveryCode));
-    }
-
-    /**
-     * Use up a recovery code, if it is still unused. A lock stops two
-     * requests giving the same code from both succeeding.
+     * Use up a recovery code if it is still unused, replacing it with a new
+     * one. Returns false when the code is not (or no longer) one of the
+     * user's.
+     *
+     * The replacement is saved only if the stored codes are still the ones
+     * that were read (compare-and-swap), so two requests giving the same
+     * code cannot both succeed, at sign-in or in settings.
      */
     public function consumeRecoveryCode(User $user, string $recoveryCode): bool
     {
-        return Cache::lock('crms.recovery-codes.'.$user->getKey(), 10)->block(5, function () use ($user, $recoveryCode): bool {
-            $user->refresh();
+        $recoveryCode = trim($recoveryCode);
+        $encrypter = Fortify::currentEncrypter();
 
-            $code = $this->matchingRecoveryCode($user, $recoveryCode);
+        // Retried a few times in case another code was used at the same moment.
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $storedCodes = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
 
-            if ($code === null) {
+            if (! is_string($storedCodes)) {
                 return false;
             }
 
-            $user->replaceRecoveryCode($code);
+            /** @var list<string> $codes */
+            $codes = json_decode($encrypter->decrypt($storedCodes), true);
+            $usedCode = collect($codes)->first(fn (string $code): bool => hash_equals($code, $recoveryCode));
 
-            return true;
-        });
+            if ($usedCode === null) {
+                return false;
+            }
+
+            $replacedCodes = $encrypter->encrypt(json_encode(
+                array_map(fn (string $code): string => $code === $usedCode ? RecoveryCode::generate() : $code, $codes),
+            ));
+
+            $updated = User::query()
+                ->whereKey($user->getKey())
+                ->where('two_factor_recovery_codes', $storedCodes)
+                ->update(['two_factor_recovery_codes' => $replacedCodes]);
+
+            if ($updated === 1) {
+                $user->forceFill(['two_factor_recovery_codes' => $replacedCodes])->syncOriginalAttribute('two_factor_recovery_codes');
+
+                RecoveryCodeReplaced::dispatch($user, $usedCode);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

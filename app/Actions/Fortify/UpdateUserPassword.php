@@ -36,7 +36,9 @@ class UpdateUserPassword implements UpdatesUserPasswords
         ], [
             'password.different' => __('Your new password must be different from your current password.'),
         ])->after(function (ValidatorContract $validator) use ($user, $input): void {
-            if ($validator->errors()->has('current_password')) {
+            // The form is rejected anyway; checking the password would only
+            // use up one of the user's limited attempts.
+            if ($validator->errors()->isNotEmpty()) {
                 return;
             }
 
