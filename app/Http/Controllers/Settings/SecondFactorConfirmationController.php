@@ -24,7 +24,8 @@ class SecondFactorConfirmationController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // A recovery code given here was used up by the request's validation.
+        $request->proveSecondFactor();
+
         $secondFactor->markConfirmed($request->session());
 
         $audit->record('mfa.step_up.passed', AuditOutcome::Success, $user, [

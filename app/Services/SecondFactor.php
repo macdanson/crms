@@ -8,6 +8,7 @@ use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Fortify\Events\RecoveryCodeReplaced;
 use Laravel\Fortify\Fortify;
 use Laravel\Fortify\RecoveryCode;
+use RuntimeException;
 
 /**
  * Checks a user's second factor (an authenticator code or a recovery code)
@@ -27,6 +28,12 @@ class SecondFactor
      * How long a proof lasts, in seconds.
      */
     public const CONFIRMATION_SECONDS = 300;
+
+    /**
+     * Each retry follows another request's successful change, so this is
+     * only reached if the codes change continuously.
+     */
+    private const MAX_SWAP_ATTEMPTS = 50;
 
     public function __construct(private TwoFactorAuthenticationProvider $provider) {}
 
@@ -53,14 +60,19 @@ class SecondFactor
      * The replacement is saved only if the stored codes are still the ones
      * that were read (compare-and-swap), so two requests giving the same
      * code cannot both succeed, at sign-in or in settings.
+     *
+     * A failed swap means another request changed the codes first, so it is
+     * retried against the new codes: false then always means the code is
+     * really not there, never that the request lost a race.
+     *
+     * @throws RuntimeException if the codes keep changing (a safety net).
      */
     public function consumeRecoveryCode(User $user, string $recoveryCode): bool
     {
         $recoveryCode = trim($recoveryCode);
         $encrypter = Fortify::currentEncrypter();
 
-        // Retried a few times in case another code was used at the same moment.
-        for ($attempt = 0; $attempt < 3; $attempt++) {
+        for ($attempt = 0; $attempt < self::MAX_SWAP_ATTEMPTS; $attempt++) {
             $storedCodes = User::query()->whereKey($user->getKey())->value('two_factor_recovery_codes');
 
             if (! is_string($storedCodes)) {
@@ -93,7 +105,7 @@ class SecondFactor
             }
         }
 
-        return false;
+        throw new RuntimeException('The recovery codes kept changing while one was being used.');
     }
 
     /**

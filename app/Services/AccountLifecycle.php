@@ -9,6 +9,7 @@ use App\Notifications\AccountInvitation;
 use Illuminate\Auth\Passwords\PasswordBroker;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -75,21 +76,19 @@ class AccountLifecycle
             ->where('status', AccountStatus::Pending)
             ->first();
 
-        $activated = $user !== null && DB::transaction(function () use ($user, $token, $password): bool {
-            if (! $this->claimInvitation($user, $token)) {
-                return false;
-            }
+        $broker = $this->invitationBroker();
 
-            $user->forceFill([
-                'password' => $password,
-                'password_changed_at' => now(),
-                'email_verified_at' => $user->email_verified_at ?? now(),
-                'status' => AccountStatus::Active,
-                'remember_token' => Str::random(60),
-            ])->save();
+        $activated = $user !== null
+            && $broker->tokenExists($user, $token)
+            && DB::transaction(function () use ($user, $password, $broker): bool {
+                if (! $this->claimPendingAccount($user, $password)) {
+                    return false;
+                }
 
-            return true;
-        });
+                $broker->deleteToken($user);
+
+                return true;
+            });
 
         if (! $activated) {
             $this->audit->record('account.activation.failed', AuditOutcome::Failure, $user);
@@ -177,20 +176,31 @@ class AccountLifecycle
     }
 
     /**
-     * Use up the user's activation link if the token is valid. Only the
-     * request that deletes the stored token may use the link, so two
-     * requests with the same link cannot both activate the account.
+     * Activate the account with the chosen password, but only if it is still
+     * pending. The check and the change are one conditional update, so when
+     * two requests use the same link, only the first activates the account.
      */
-    private function claimInvitation(User $user, string $token): bool
+    private function claimPendingAccount(User $user, string $password): bool
     {
-        $tokens = DB::table((string) config('auth.passwords.invitations.table'));
-        $storedToken = (clone $tokens)->where('email', $user->email)->value('token');
+        $updated = User::query()
+            ->whereKey($user->getKey())
+            ->where('status', AccountStatus::Pending)
+            ->update([
+                'password' => Hash::make($password),
+                'password_changed_at' => now(),
+                'email_verified_at' => $user->email_verified_at ?? now(),
+                'status' => AccountStatus::Active,
+                'remember_token' => Str::random(60),
+                'updated_at' => now(),
+            ]);
 
-        if ($storedToken === null || ! $this->invitationBroker()->tokenExists($user, $token)) {
+        if ($updated !== 1) {
             return false;
         }
 
-        return (clone $tokens)->where('email', $user->email)->where('token', $storedToken)->delete() === 1;
+        $user->refresh();
+
+        return true;
     }
 
     private function invitationBroker(): PasswordBroker

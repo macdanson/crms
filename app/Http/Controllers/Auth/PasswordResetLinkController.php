@@ -2,14 +2,12 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Models\User;
+use App\Http\Responses\PasswordResetLinkRequestedResponse;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Support\Timebox;
-use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
-use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Http\Controllers\PasswordResetLinkController as FortifyPasswordResetLinkController;
 use Laravel\Fortify\Http\Requests\SendPasswordResetLinkRequest;
 
@@ -33,17 +31,16 @@ class PasswordResetLinkController extends FortifyPasswordResetLinkController
     public function store(SendPasswordResetLinkRequest $request): Responsable
     {
         return (new Timebox)->call(function () use ($request): Responsable {
-            $status = $this->broker()->sendResetLink([
-                'email' => User::normaliseEmail((string) $request->input('email')),
-            ]);
+            $response = parent::store($request);
 
-            if ($status !== Password::RESET_LINK_SENT) {
+            $linkSent = $response instanceof PasswordResetLinkRequestedResponse
+                && $response->status === Password::RESET_LINK_SENT;
+
+            if (! $linkSent) {
                 Hash::make(Str::random(64));
             }
 
-            return $status === Password::RESET_LINK_SENT
-                ? app(SuccessfulPasswordResetLinkRequestResponse::class, ['status' => $status])
-                : app(FailedPasswordResetLinkRequestResponse::class, ['status' => $status]);
+            return $response;
         }, self::MINIMUM_DURATION);
     }
 }

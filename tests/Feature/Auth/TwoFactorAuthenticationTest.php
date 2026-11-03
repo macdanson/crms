@@ -7,7 +7,8 @@ use App\Services\AccountLifecycle;
 use App\Services\SecondFactor;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
@@ -303,17 +304,52 @@ it('does not sign out other sessions when abandoning an unconfirmed enrolment', 
         ->assertOk();
 });
 
-it('lets only one of two racing sign-ins use the same recovery code', function () {
+it('keeps the sign-in challenge when another sign-in used the same recovery code first', function () {
     $user = User::factory()->withTwoFactor()->create();
     $recoveryCode = $user->recoveryCodes()[0];
 
-    // Both sign-in challenges found the code before either used it up.
-    $firstChallengeUser = User::find($user->id);
-    $secondChallengeUser = User::find($user->id);
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('two-factor.login'));
 
-    $firstChallengeUser->replaceRecoveryCode($recoveryCode);
+    // Another sign-in uses the same code just after this one has read the codes.
+    $otherSignInDone = false;
+    DB::listen(function (QueryExecuted $query) use (&$otherSignInDone, $user, $recoveryCode): void {
+        if ($otherSignInDone || ! str_contains($query->sql, 'two_factor_recovery_codes')) {
+            return;
+        }
 
-    expect(fn () => $secondChallengeUser->replaceRecoveryCode($recoveryCode))->toThrow(ValidationException::class)
-        ->and($user->fresh()->recoveryCodes())->not->toContain($recoveryCode)
-        ->and(AuditEvent::where('event', 'mfa.challenge.failed')->where('user_id', $user->id)->count())->toBe(1);
+        $otherSignInDone = true;
+        app(SecondFactor::class)->consumeRecoveryCode(User::find($user->id), $recoveryCode);
+    });
+
+    $this->post(route('two-factor.login.store'), ['recovery_code' => $recoveryCode])
+        ->assertRedirect(route('two-factor.login'))
+        ->assertSessionHasErrors('recovery_code');
+
+    $this->assertGuest();
+    $this->get(route('two-factor.login'))->assertOk();
+});
+
+it('accepts a valid recovery code however often other codes change while it is used', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $codes = $user->recoveryCodes();
+    $givenCode = $codes[0];
+    $codesUsedMeanwhile = 0;
+    $otherRequestRunning = false;
+
+    // After each of the first four reads, another request uses a different
+    // code first, so this request's save keeps failing and is retried.
+    DB::listen(function (QueryExecuted $query) use (&$codesUsedMeanwhile, &$otherRequestRunning, $codes, $user): void {
+        if ($otherRequestRunning || $codesUsedMeanwhile >= 4 || ! str_starts_with($query->sql, 'select "two_factor_recovery_codes"')) {
+            return;
+        }
+
+        $otherRequestRunning = true;
+        $codesUsedMeanwhile++;
+        app(SecondFactor::class)->consumeRecoveryCode(User::find($user->id), $codes[$codesUsedMeanwhile]);
+        $otherRequestRunning = false;
+    });
+
+    expect(app(SecondFactor::class)->consumeRecoveryCode($user, $givenCode))->toBeTrue()
+        ->and($user->fresh()->recoveryCodes())->not->toContain($givenCode);
 });

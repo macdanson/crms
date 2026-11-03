@@ -5,6 +5,8 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\AccountInvitation;
 use App\Services\AccountLifecycle;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
@@ -156,15 +158,18 @@ it('states the activation link expiry that the token broker enforces', function 
     expect(implode(' ', $mail->outroLines))->toContain('expires in 2 hours');
 });
 
-it('activates the account once when two requests use the same link at the same time', function () {
+it('activates the account only once when a second request uses the link before the first has finished', function () {
     [$user, $token] = inviteUser();
     $lifecycle = app(AccountLifecycle::class);
-    $secondRequestActivated = null;
     $secondRequestStarted = false;
+    $secondRequestActivated = null;
 
-    // The second request arrives while the first is saving the account.
-    User::updating(function () use (&$secondRequestActivated, &$secondRequestStarted, $lifecycle, $user, $token): void {
-        if ($secondRequestStarted) {
+    // Models the interleaving on one connection: the second request runs
+    // after the first has found the link valid, before it activates the
+    // account. Across connections the same guarantee comes from the
+    // conditional update in AccountLifecycle::claimPendingAccount.
+    DB::listen(function (QueryExecuted $query) use (&$secondRequestStarted, &$secondRequestActivated, $lifecycle, $user, $token): void {
+        if ($secondRequestStarted || ! str_contains($query->sql, 'account_activation_tokens')) {
             return;
         }
 
@@ -172,8 +177,9 @@ it('activates the account once when two requests use the same link at the same t
         $secondRequestActivated = $lifecycle->activate($user->email, $token, 'Second-Password-2026!');
     });
 
-    expect($lifecycle->activate($user->email, $token, 'First-Password-2026!'))->toBeTrue()
-        ->and($secondRequestActivated)->toBeFalse()
-        ->and(Hash::check('First-Password-2026!', $user->fresh()->password))->toBeTrue()
+    $firstRequestActivated = $lifecycle->activate($user->email, $token, 'First-Password-2026!');
+
+    expect([$firstRequestActivated, $secondRequestActivated])->toBe([false, true])
+        ->and(Hash::check('Second-Password-2026!', $user->fresh()->password))->toBeTrue()
         ->and(AuditEvent::where('event', 'account.activated')->count())->toBe(1);
 });

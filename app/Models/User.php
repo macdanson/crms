@@ -14,8 +14,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
-use Laravel\Fortify\Events\TwoFactorAuthenticationFailed;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -69,23 +67,16 @@ class User extends Authenticatable
     }
 
     /**
-     * Use up a recovery code given at the sign-in challenge (Fortify calls
-     * this after finding the code). Done atomically, so two sign-ins racing
-     * with the same code cannot both succeed.
+     * Use up a recovery code if it is still unused (atomically; see
+     * SecondFactor::consumeRecoveryCode). At sign-in the code has already
+     * been used up while it was checked (TwoFactorLoginRequest), so Fortify's
+     * call here afterwards changes nothing.
      *
      * @param  string  $code
-     *
-     * @throws ValidationException
      */
     public function replaceRecoveryCode($code): void
     {
-        if (! app(SecondFactor::class)->consumeRecoveryCode($this, $code)) {
-            TwoFactorAuthenticationFailed::dispatch($this);
-
-            throw ValidationException::withMessages([
-                'recovery_code' => __('The provided two factor recovery code was invalid.'),
-            ]);
-        }
+        app(SecondFactor::class)->consumeRecoveryCode($this, $code);
     }
 
     /**

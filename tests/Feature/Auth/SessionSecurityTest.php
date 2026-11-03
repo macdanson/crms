@@ -4,6 +4,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use App\Services\SessionPolicy;
+use Database\Factories\UserFactory;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Session\ArraySessionHandler;
@@ -302,5 +303,32 @@ it('sends a guest to sign in after a stale token on an Inertia sign-in', functio
 
     $this->withHeader('X-Inertia', 'true')
         ->post(route('login.store'), ['email' => 'someone@crms.test', 'password' => 'anything'])
+        // A POST: browsers follow a 302 with GET, so it needs no 303.
+        ->assertStatus(302)
+        ->assertRedirect(route('login'));
+});
+
+it('sends a signed-in user back with GET after a stale token on an Inertia DELETE', function () {
+    enforceCsrfTokens();
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->from(route('security.show'))
+        ->withHeader('X-Inertia', 'true')
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertStatus(303)
+        ->assertRedirect(route('security.show'));
+});
+
+it('sends an Inertia PUT made after a security change to the sign-in page with GET', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    app(SessionPolicy::class)->endOtherSessions($user);
+
+    $this->withHeader('X-Inertia', 'true')
+        ->put(route('user-password.update'), [])
+        ->assertStatus(303)
         ->assertRedirect(route('login'));
 });

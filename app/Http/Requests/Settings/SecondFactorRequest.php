@@ -8,15 +8,17 @@ use App\Models\User;
 use App\Services\AccountAttemptLimiter;
 use App\Services\AuditLogger;
 use App\Services\SecondFactor;
-use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Validator;
+use Illuminate\Validation\ValidationException;
 
 /**
  * A request that must carry proof of the user's second factor: the code
- * from their authenticator app, or one of their recovery codes. A recovery
- * code is used up once the request has passed validation.
+ * from their authenticator app, or one of their recovery codes.
+ *
+ * Validation only checks the input. The action calls proveSecondFactor()
+ * as its first step, which checks the proof and uses a recovery code up,
+ * so the side effect is part of the action, not of validation.
  */
 class SecondFactorRequest extends FormRequest
 {
@@ -54,42 +56,35 @@ class SecondFactorRequest extends FormRequest
     }
 
     /**
-     * @return array<int, Closure(Validator): void>
+     * Check the proof, using a recovery code up, or throw a validation error.
+     * Guesses are limited per account, not only per request, so a hijacked
+     * session cannot keep guessing codes.
+     *
+     * @throws ValidationException
      */
-    public function after(): array
+    public function proveSecondFactor(): void
     {
-        return [
-            function (Validator $validator): void {
-                if ($validator->errors()->isNotEmpty()) {
-                    return;
-                }
+        $user = $this->challengedUser();
+        $limiter = app(AccountAttemptLimiter::class);
+        $field = $this->filled('recovery_code') ? 'recovery_code' : 'code';
 
-                $user = $this->challengedUser();
-                $limiter = app(AccountAttemptLimiter::class);
-                $field = $this->filled('recovery_code') ? 'recovery_code' : 'code';
+        $result = $limiter->attempt('second-factor', $user, fn (): bool => $this->checkProof());
 
-                // Limited per account, not only per request, so a hijacked
-                // session cannot keep guessing codes.
-                $result = $limiter->attempt('second-factor', $user, fn (): bool => $this->proveSecondFactor());
+        if ($result === AttemptResult::Passed) {
+            return;
+        }
 
-                if ($result === AttemptResult::Passed) {
-                    return;
-                }
+        if ($result === AttemptResult::Locked) {
+            app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user);
 
-                if ($result === AttemptResult::Locked) {
-                    app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user);
-                    $validator->errors()->add($field, $limiter->lockedMessage('second-factor', $user, 'codes'));
+            throw ValidationException::withMessages([$field => $limiter->lockedMessage('second-factor', $user, 'codes')]);
+        }
 
-                    return;
-                }
+        app(AuditLogger::class)->record($this->failureEvent(), AuditOutcome::Failure, $user);
 
-                app(AuditLogger::class)->record($this->failureEvent(), AuditOutcome::Failure, $user);
-
-                $validator->errors()->add($field, $field === 'recovery_code'
-                    ? 'That recovery code is not valid.'
-                    : 'That code is not valid. Check your authenticator app and try again.');
-            },
-        ];
+        throw ValidationException::withMessages([$field => $field === 'recovery_code'
+            ? 'That recovery code is not valid.'
+            : 'That code is not valid. Check your authenticator app and try again.']);
     }
 
     /**
@@ -111,7 +106,7 @@ class SecondFactorRequest extends FormRequest
      * atomic step, so a code that a parallel request has just used counts
      * as a wrong guess.
      */
-    private function proveSecondFactor(): bool
+    private function checkProof(): bool
     {
         $secondFactor = app(SecondFactor::class);
 

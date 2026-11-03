@@ -25,11 +25,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Redirects after a PUT/PATCH/DELETE: inertia-laravel registers its
-        // EnsureGetOnRedirect as global middleware, outside everything below,
-        // so every 302 answering a non-GET Inertia request becomes a 303 and
-        // is followed with GET. That covers redirects from any middleware
-        // and from the exception handler, so none of them set 303 by hand.
+        // Redirects after a PUT, PATCH or DELETE: inertia-laravel pushes its
+        // EnsureGetOnRedirect onto the global middleware at boot, after the
+        // global middleware appended here. It therefore wraps routing: the
+        // web group below, route middleware, controllers and the exception
+        // handler. A 302 from any of those that answers an Inertia PUT, PATCH
+        // or DELETE becomes a 303, so the browser follows it with GET (after a
+        // POST it does so anyway). The global middleware appended here run
+        // outside it and must not redirect.
 
         // Appended so they run after TrustProxies, which they rely on. Being
         // global, the security headers also cover responses that a later
