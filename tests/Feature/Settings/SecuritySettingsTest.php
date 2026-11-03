@@ -177,7 +177,7 @@ it('replaces the authenticator and sends the user to re-enrol', function () {
 
     $this->actingAs($user)
         ->withSession(['auth.password_confirmed_at' => time()])
-        ->post(route('security.two-factor.reset'))
+        ->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
         ->assertRedirect(route('two-factor.setup'));
 
     expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse()
@@ -235,7 +235,7 @@ it('signs out every other session when the user replaces their authenticator', f
 
     $this->actingAs($user)
         ->withSession(['auth.password_confirmed_at' => time()])
-        ->post(route('security.two-factor.reset'))
+        ->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
         ->assertRedirect(route('two-factor.setup'));
 
     expect(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeFalse();
@@ -293,4 +293,33 @@ it('signs out other sessions with any session driver after a password change', f
     $this->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
         ->get(route('dashboard'))
         ->assertRedirect(route('login'));
+});
+
+it('will not replace the authenticator without a current code', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'))
+        ->assertSessionHasErrors('code');
+
+    $this->post(route('security.two-factor.reset'), ['code' => '000000'])
+        ->assertSessionHasErrors('code');
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeTrue()
+        ->and(AuditEvent::where('event', 'mfa.reset.failed')->where('user_id', $user->id)->count())->toBe(1);
+});
+
+it('replaces the authenticator with a recovery code when the phone is lost', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => 'not-a-recovery-code'])
+        ->assertSessionHasErrors('recovery_code');
+
+    $this->post(route('security.two-factor.reset'), ['recovery_code' => $user->recoveryCodes()[0]])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
 });

@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Fortify\Fortify;
+use PragmaRX\Google2FA\Google2FA;
 use Tests\TestCase;
 
 /*
@@ -44,7 +47,10 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * The code the user's authenticator app shows right now.
+ */
+function currentAuthenticatorCode(User $user): string
 {
-    // ..
+    return app(Google2FA::class)->getCurrentOtp(Fortify::currentEncrypter()->decrypt($user->two_factor_secret));
 }

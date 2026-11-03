@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -34,11 +35,12 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $suspension_reason
  * @property string|null $remember_token
  * @property string|null $session_stamp
+ * @property string|null $session_stamp_holder
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'staff_number', 'job_title', 'email', 'password'])]
-#[Hidden(['password', 'remember_token', 'session_stamp', 'two_factor_secret', 'two_factor_recovery_codes'])]
+#[Hidden(['password', 'remember_token', 'session_stamp', 'session_stamp_holder', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -52,6 +54,26 @@ class User extends Authenticatable
     protected $attributes = [
         'status' => 'pending',
     ];
+
+    /**
+     * The one way an email address is compared and stored: trimmed and
+     * lower-cased (multibyte-safe).
+     */
+    public static function normaliseEmail(string $email): string
+    {
+        return Str::lower(trim($email));
+    }
+
+    /**
+     * Every account has a session stamp from the start, so signing in never
+     * has to create one (see App\Services\SessionPolicy).
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (User $user): void {
+            $user->session_stamp ??= Str::random(64);
+        });
+    }
 
     /**
      * Get the attributes that should be cast.

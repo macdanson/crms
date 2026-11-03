@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\AuditOutcome;
+use App\Http\ResponseFormat;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -42,9 +43,9 @@ class SessionTermination
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        if ($request->wantsJsonResponse()) {
-            // The browser reloads after a 401 and lands on the sign-in page;
-            // the flashed reason is shown there.
+        if (ResponseFormat::wantsJson($request)) {
+            // The browser reloads the page after a 401. The guest redirect to
+            // the sign-in page keeps this message (see bootstrap/app.php).
             $request->session()->flash('status', $message);
 
             return response()->json(['message' => $message], 401);

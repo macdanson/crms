@@ -2,7 +2,6 @@
 
 namespace App\Actions\Fortify;
 
-use App\Enums\AccountStatus;
 use App\Enums\AuditOutcome;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -37,7 +36,7 @@ class AuthenticateUser
      */
     public function __invoke(Request $request): ?User
     {
-        $email = Str::lower(trim((string) $request->input('email')));
+        $email = User::normaliseEmail((string) $request->input('email'));
         $password = (string) $request->input('password');
 
         /** @var User|null $user */
@@ -65,7 +64,7 @@ class AuthenticateUser
             ]);
 
             throw ValidationException::withMessages([
-                'email' => $this->inactiveMessage($user->status),
+                'email' => $user->status->signInBlockedMessage(),
             ]);
         }
 
@@ -92,16 +91,5 @@ class AuthenticateUser
         }
 
         return $hash;
-    }
-
-    private function inactiveMessage(AccountStatus $status): string
-    {
-        $contact = config('crms.product.support_contact');
-
-        return match ($status) {
-            AccountStatus::Pending => 'This account has not been activated. Use the activation link sent to your email address.',
-            AccountStatus::Suspended => "This account is suspended. Contact {$contact}.",
-            default => "This account is no longer active. Contact {$contact}.",
-        };
     }
 }

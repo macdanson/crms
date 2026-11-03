@@ -288,3 +288,29 @@ it('keeps other sessions signed in when a sign-in upgrades the password hash', f
 
     $this->actingAs($user)->get(route('dashboard'))->assertOk();
 });
+
+it('gives every new account a session stamp, so signing in never creates one', function () {
+    $user = User::factory()->create();
+
+    expect($user->session_stamp)->toBeString()->toHaveLength(64);
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+
+    expect($user->fresh()->session_stamp)->toBe($user->session_stamp);
+});
+
+it('does not keep a password typed into the email field of a failed sign-in', function () {
+    $this->post(route('login.store'), ['email' => 'Secret-Pass-123!', 'password' => 'anything'])
+        ->assertSessionHasErrors('email');
+
+    $context = AuditEvent::where('event', 'auth.login.failed')->sole()->context;
+
+    expect($context)->not->toHaveKey('email')
+        ->and(json_encode($context))->not->toContain('Secret-Pass-123!');
+});
+
+it('keeps the email address of a failed sign-in for an unknown account', function () {
+    $this->post(route('login.store'), ['email' => ' Nobody@CRMS.test ', 'password' => 'anything']);
+
+    expect(AuditEvent::where('event', 'auth.login.failed')->sole()->context)->toBe(['email' => 'nobody@crms.test']);
+});

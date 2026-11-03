@@ -35,7 +35,7 @@ class AccountLifecycle
      */
     public function invite(array $attributes, ?User $invitedBy = null): User
     {
-        $email = Str::lower(trim($attributes['email']));
+        $email = User::normaliseEmail($attributes['email']);
 
         $user = User::query()->where('email', $email)->first();
 
@@ -72,7 +72,7 @@ class AccountLifecycle
     public function activate(string $email, string $token, string $password): bool
     {
         $user = User::query()
-            ->where('email', Str::lower(trim($email)))
+            ->where('email', User::normaliseEmail($email))
             ->where('status', AccountStatus::Pending)
             ->first();
 

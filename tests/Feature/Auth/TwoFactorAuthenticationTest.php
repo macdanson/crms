@@ -2,6 +2,7 @@
 
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Services\AccountLifecycle;
 use Database\Factories\UserFactory;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Fortify;
@@ -134,4 +135,21 @@ it('does not replace a confirmed authenticator through a forced enable request',
         ->post(route('two-factor.enable'), ['force' => true]);
 
     expect($user->fresh()->two_factor_secret)->toBe($originalSecret);
+});
+
+it('does not finish signing in an account suspended after the password step', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('two-factor.login'));
+
+    app(AccountLifecycle::class)->suspend($user, 'Investigation');
+
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('email');
+
+    $this->assertGuest();
+    expect(AuditEvent::where('event', 'auth.login')->exists())->toBeFalse()
+        ->and(AuditEvent::where('event', 'auth.login.blocked')->where('user_id', $user->id)->exists())->toBeTrue();
 });

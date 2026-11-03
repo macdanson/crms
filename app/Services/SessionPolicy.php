@@ -105,7 +105,19 @@ class SessionPolicy
     {
         $sessionStamp = $session->get(self::STAMP);
 
-        return is_string($sessionStamp) && hash_equals($this->stampFor($user), $sessionStamp);
+        if (! is_string($sessionStamp) || $user->session_stamp === null) {
+            return false;
+        }
+
+        if (hash_equals($user->session_stamp, $sessionStamp)) {
+            return true;
+        }
+
+        // Sessions are not locked, so a request the kept session had in
+        // flight can save the old stamp back over the new one. The kept
+        // session is recognised by its ID instead.
+        return $user->session_stamp_holder !== null
+            && hash_equals($user->session_stamp_holder, $this->holderHash($session));
     }
 
     /**
@@ -113,14 +125,12 @@ class SessionPolicy
      */
     public function endOtherSessions(User $user, ?Session $keep = null): void
     {
-        $user->forceFill(['session_stamp' => Str::random(64)])->saveQuietly();
+        $user->forceFill([
+            'session_stamp' => Str::random(64),
+            'session_stamp_holder' => $keep === null ? null : $this->holderHash($keep),
+        ])->saveQuietly();
 
         $keep?->put(self::STAMP, $user->session_stamp);
-    }
-
-    private function authenticatedAt(Session $session): int
-    {
-        return (int) $session->get(self::AUTHENTICATED_AT, now()->getTimestamp());
     }
 
     /**
@@ -129,9 +139,29 @@ class SessionPolicy
     public function stampFor(User $user): string
     {
         if ($user->session_stamp === null) {
-            $user->forceFill(['session_stamp' => Str::random(64)])->saveQuietly();
+            // Only a row inserted without Eloquent lacks a stamp. Setting it
+            // only while it is still empty keeps concurrent sign-ins on the
+            // same stamp.
+            User::query()->whereKey($user->getKey())->whereNull('session_stamp')
+                ->update(['session_stamp' => Str::random(64)]);
+
+            $user->session_stamp = User::query()->whereKey($user->getKey())->value('session_stamp');
+            $user->syncOriginalAttribute('session_stamp');
         }
 
         return (string) $user->session_stamp;
+    }
+
+    private function authenticatedAt(Session $session): int
+    {
+        return (int) $session->get(self::AUTHENTICATED_AT, now()->getTimestamp());
+    }
+
+    /**
+     * A keyed hash of the session ID, so the ID itself is never stored.
+     */
+    private function holderHash(Session $session): string
+    {
+        return hash_hmac('sha256', $session->getId(), (string) config('app.key'));
     }
 }

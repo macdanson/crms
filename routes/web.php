@@ -52,6 +52,7 @@ Route::middleware('auth')->group(function () {
                 ->name('security.sessions.destroy-others');
 
             Route::post('two-factor/reset', TwoFactorResetController::class)
+                ->middleware('throttle:5,1')
                 ->name('security.two-factor.reset');
         });
     });

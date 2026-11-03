@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\ResponseFormat;
 use Closure;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Contracts\Config\Repository;
@@ -42,7 +43,7 @@ class RequirePasswordConfirmation extends RequirePassword
     {
         $timeout = $passwordTimeoutSeconds === null ? null : (int) $passwordTimeoutSeconds;
 
-        if ($request->isMethodSafe() || $request->wantsJsonResponse() || ! $this->shouldConfirmPassword($request, $timeout)) {
+        if ($request->isMethodSafe() || ResponseFormat::wantsJson($request) || ! $this->shouldConfirmPassword($request, $timeout)) {
             return parent::handle($request, $next, $redirectToRoute, $passwordTimeoutSeconds);
         }
 

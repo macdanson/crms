@@ -17,7 +17,6 @@ use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 use Laravel\Fortify\Events\PasswordUpdatedViaController;
 use Laravel\Fortify\Events\RecoveryCodeReplaced;
 use Laravel\Fortify\Events\RecoveryCodesGenerated;
@@ -95,24 +94,20 @@ class RecordAuthenticationActivity
 
     public function handleFailed(Failed $event): void
     {
-        $email = Str::lower(trim((string) ($event->credentials['email'] ?? '')));
+        $email = User::normaliseEmail((string) ($event->credentials['email'] ?? ''));
 
         $user = $event->user instanceof User
             ? $event->user
             : User::query()->where('email', $email)->first();
 
-        $this->audit->record('auth.login.failed', AuditOutcome::Failure, $user, [
-            'email' => Str::limit($email, 255, ''),
-        ]);
+        $this->audit->record('auth.login.failed', AuditOutcome::Failure, $user, $this->attemptedEmail($email));
     }
 
     public function handleLockout(Lockout $event): void
     {
-        $email = Str::lower(trim((string) $event->request->input('email')));
+        $email = User::normaliseEmail((string) $event->request->input('email'));
 
-        $this->audit->record('auth.lockout', AuditOutcome::Blocked, User::query()->where('email', $email)->first(), [
-            'email' => Str::limit($email, 255, ''),
-        ]);
+        $this->audit->record('auth.lockout', AuditOutcome::Blocked, User::query()->where('email', $email)->first(), $this->attemptedEmail($email));
     }
 
     public function handleLogout(Logout $event): void
@@ -234,6 +229,23 @@ class RecordAuthenticationActivity
             ipAddress: $ipAddress,
             signedInAt: now(),
         ));
+    }
+
+    /**
+     * What was typed in the email field of a failed sign-in. Only a valid
+     * email address is kept as typed: anything else may be a password typed
+     * in the wrong field, so only a keyed hash is kept, which still links
+     * repeated attempts.
+     *
+     * @return array{email: string}|array{email_hash: string}
+     */
+    private function attemptedEmail(string $email): array
+    {
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) !== false && mb_strlen($email) <= 255) {
+            return ['email' => $email];
+        }
+
+        return ['email_hash' => hash_hmac('sha256', $email, (string) config('app.key'))];
     }
 
     private function asUser(mixed $user): ?User

@@ -17,7 +17,7 @@ class SuspendUser extends Command
      */
     public function handle(AccountLifecycle $accounts): int
     {
-        $user = User::query()->where('email', strtolower((string) $this->argument('email')))->first();
+        $user = User::query()->where('email', User::normaliseEmail((string) $this->argument('email')))->first();
 
         if ($user === null) {
             $this->components->error('No account matches that email address.');

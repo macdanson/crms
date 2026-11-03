@@ -3,6 +3,9 @@
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountLifecycle;
+use App\Services\SessionPolicy;
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\Store;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 
@@ -146,7 +149,7 @@ it('keeps the session of a user who replaces their own authenticator', function 
 
     $this->actingAs($user)
         ->withSession(['auth.password_confirmed_at' => time()])
-        ->post(route('security.two-factor.reset'))
+        ->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
         ->assertRedirect(route('two-factor.setup'));
 
     $this->get(route('two-factor.setup'))->assertOk();
@@ -199,4 +202,44 @@ it('signs out a suspended user even if the account is reactivated first', functi
 
     $this->get(route('dashboard'))->assertRedirect(route('login'));
     $this->assertGuest();
+});
+
+it('shows the sign-out reason after the browser reloads a protected page', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+
+    $this->get(route('login'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('flash.status', 'You were signed out after a period of inactivity.'));
+});
+
+it('keeps the session that ended the others even if an earlier request saves the old stamp back', function () {
+    $user = User::factory()->create();
+    $policy = app(SessionPolicy::class);
+    $newSession = function (): Store {
+        $session = new Store('crms_test', new ArraySessionHandler(120));
+        $session->start();
+
+        return $session;
+    };
+
+    $keptSession = $newSession();
+    $otherSession = $newSession();
+    $policy->start($keptSession, $user);
+    $policy->start($otherSession, $user);
+    $stampBefore = $keptSession->get(SessionPolicy::STAMP);
+
+    $policy->endOtherSessions($user, $keptSession);
+
+    // A request the kept session had in flight saves the session it read
+    // before the change, with the old stamp.
+    $keptSession->put(SessionPolicy::STAMP, $stampBefore);
+
+    expect($policy->isCurrent($keptSession, $user->fresh()))->toBeTrue()
+        ->and($policy->isCurrent($otherSession, $user->fresh()))->toBeFalse();
 });

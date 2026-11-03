@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -24,7 +25,7 @@ class InviteUser extends Command
     public function handle(AccountLifecycle $accounts): int
     {
         $input = [
-            'email' => (string) $this->argument('email'),
+            'email' => User::normaliseEmail((string) $this->argument('email')),
             'name' => (string) ($this->option('name') ?: $this->ask('Full name')),
             'staff_number' => $this->option('staff-number') ?: null,
             'job_title' => $this->option('job-title') ?: null,
@@ -34,7 +35,7 @@ class InviteUser extends Command
             'email' => ['required', 'email', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
             'staff_number' => ['nullable', 'string', 'max:32', Rule::unique('users', 'staff_number')->where(
-                fn ($query) => $query->where('email', '!=', strtolower($input['email'])),
+                fn ($query) => $query->where('email', '!=', $input['email']),
             )],
             'job_title' => ['nullable', 'string', 'max:64'],
         ]);

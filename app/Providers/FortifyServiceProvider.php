@@ -7,6 +7,7 @@ use App\Actions\Fortify\DisableTwoFactorAuthentication;
 use App\Actions\Fortify\EnableTwoFactorAuthentication;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
+use App\Http\Requests\Auth\TwoFactorLoginRequest;
 use App\Http\Responses\LogoutResponse;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
 use App\Http\Responses\SignedInResponse;
@@ -18,13 +19,13 @@ use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication as FortifyDisableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\EnableTwoFactorAuthentication as FortifyEnableTwoFactorAuthentication;
-use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Contracts\LoginResponse;
 use Laravel\Fortify\Contracts\LogoutResponse as LogoutResponseContract;
 use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse;
 use Laravel\Fortify\Fortify;
+use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLoginRequest;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -43,6 +44,8 @@ class FortifyServiceProvider extends ServiceProvider
         $this->app->singleton(LogoutResponseContract::class, LogoutResponse::class);
         $this->app->bind(LoginResponse::class, SignedInResponse::class);
         $this->app->bind(TwoFactorLoginResponse::class, SignedInResponse::class);
+
+        $this->app->bind(FortifyTwoFactorLoginRequest::class, TwoFactorLoginRequest::class);
 
         $this->app->bind(FortifyEnableTwoFactorAuthentication::class, EnableTwoFactorAuthentication::class);
         $this->app->bind(FortifyDisableTwoFactorAuthentication::class, DisableTwoFactorAuthentication::class);
@@ -75,7 +78,6 @@ class FortifyServiceProvider extends ServiceProvider
         });
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
-        Fortify::redirectUserForTwoFactorAuthenticationUsing(RedirectIfTwoFactorAuthenticatable::class);
     }
 
     private function configureViews(): void

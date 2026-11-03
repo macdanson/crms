@@ -96,6 +96,7 @@ const eventLabels: Record<string, string> = {
     'auth.password_reset.completed': 'Password reset',
     'mfa.enrolment.confirmed': 'Authenticator linked',
     'mfa.reset': 'Authenticator reset',
+    'mfa.reset.failed': 'Authenticator replacement refused (wrong code)',
     'auth.session.invalidated': 'Signed out after a security change',
     'mfa.recovery_codes.generated': 'Recovery codes regenerated',
     'mfa.recovery_code.used': 'Recovery code used',
@@ -173,23 +174,35 @@ async function confirmRegenerateCodes(): Promise<void> {
     );
 }
 
-async function confirmResetAuthenticator(): Promise<void> {
-    try {
-        await ElMessageBox.confirm(
-            'Your current authenticator and recovery codes will stop working. You will link a new authenticator straight away.',
-            'Replace your authenticator?',
-            {
-                confirmButtonText: 'Replace authenticator',
-                cancelButtonText: 'Cancel',
-                type: 'warning',
-                confirmButtonClass: 'el-button--danger',
-            },
-        );
-    } catch {
-        return;
-    }
+const resetAuthenticatorOpen = ref(false);
+const resetWithRecoveryCode = ref(false);
+const resetForm = useForm({ code: '', recovery_code: '' });
 
-    router.post(resetTwoFactor.url());
+function openResetAuthenticator(): void {
+    resetWithRecoveryCode.value = false;
+    resetForm.reset();
+    resetForm.clearErrors();
+    resetAuthenticatorOpen.value = true;
+}
+
+function toggleResetMethod(): void {
+    resetWithRecoveryCode.value = !resetWithRecoveryCode.value;
+    resetForm.reset();
+    resetForm.clearErrors();
+}
+
+/** Replacing the authenticator needs the current code (or a recovery code). */
+function submitResetAuthenticator(): void {
+    resetForm
+        .transform((data) =>
+            resetWithRecoveryCode.value
+                ? { recovery_code: data.recovery_code.trim() }
+                : { code: data.code.replace(/\s/g, '') },
+        )
+        .post(resetTwoFactor.url(), {
+            preserveScroll: true,
+            onError: () => resetForm.reset(),
+        });
 }
 
 /* Sessions ------------------------------------------------------------- */
@@ -413,7 +426,7 @@ function submitSignOutOthers(): void {
                         type="danger"
                         plain
                         :icon="Iphone"
-                        @click="confirmResetAuthenticator"
+                        @click="openResetAuthenticator"
                     >
                         Replace authenticator
                     </ElButton>
@@ -573,6 +586,68 @@ function submitSignOutOthers(): void {
     </ElDialog>
 
     <!-- Sign out other sessions dialog -->
+    <ElDialog
+        v-model="resetAuthenticatorOpen"
+        title="Replace your authenticator"
+        width="min(440px, calc(100vw - 32px))"
+        append-to-body
+    >
+        <p class="mb-4 text-sm text-slate-600">
+            Your current authenticator and recovery codes will stop working, and
+            other devices will be signed out. You will link a new authenticator
+            straight away.
+        </p>
+        <ElForm label-position="top" @submit.prevent="submitResetAuthenticator">
+            <ElFormItem
+                v-if="!resetWithRecoveryCode"
+                label="Code from your current authenticator app"
+                :error="resetForm.errors.code"
+            >
+                <ElInput
+                    v-model="resetForm.code"
+                    name="code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    placeholder="000000"
+                    :prefix-icon="Iphone"
+                />
+            </ElFormItem>
+            <ElFormItem
+                v-else
+                label="Recovery code"
+                :error="resetForm.errors.recovery_code"
+            >
+                <ElInput
+                    v-model="resetForm.recovery_code"
+                    name="recovery_code"
+                    autocomplete="off"
+                    placeholder="xxxxxxxxxx-xxxxxxxxxx"
+                    :prefix-icon="Key"
+                />
+            </ElFormItem>
+        </ElForm>
+        <button
+            type="button"
+            class="text-sm font-semibold text-brand-600 hover:text-brand-800"
+            @click="toggleResetMethod"
+        >
+            {{
+                resetWithRecoveryCode
+                    ? 'Use authenticator code'
+                    : 'Lost your phone? Use a recovery code'
+            }}
+        </button>
+        <template #footer>
+            <ElButton @click="resetAuthenticatorOpen = false">Cancel</ElButton>
+            <ElButton
+                type="danger"
+                :loading="resetForm.processing"
+                @click="submitResetAuthenticator"
+                >Replace authenticator</ElButton
+            >
+        </template>
+    </ElDialog>
     <ElDialog
         v-model="signOutOthersOpen"
         title="Sign out other sessions"

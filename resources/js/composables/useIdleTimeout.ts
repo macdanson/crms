@@ -59,7 +59,7 @@ export function useIdleTimeout() {
     let lastUserActivity = Date.now();
     let ticker: ReturnType<typeof setInterval> | undefined;
     let channel: BroadcastChannel | undefined;
-    let removeFinishListener: (() => void) | undefined;
+    let removeServerContactListeners: (() => void) | undefined;
     let expiring = false;
     let heartbeatInFlight = false;
     let nextHeartbeatAllowedAt = 0;
@@ -250,7 +250,13 @@ export function useIdleTimeout() {
             }),
         );
 
-        removeFinishListener = router.on('finish', () => recordServerContact());
+        // Only visits the server answered count: a visit that failed on the
+        // network or was cancelled never reset the server's idle clock.
+        const removeListeners = (
+            ['success', 'error', 'httpException', 'prefetched'] as const
+        ).map((event) => router.on(event, () => recordServerContact()));
+        removeServerContactListeners = () =>
+            removeListeners.forEach((remove) => remove());
 
         if ('BroadcastChannel' in window) {
             channel = new BroadcastChannel('crms-session');
@@ -274,7 +280,7 @@ export function useIdleTimeout() {
         activityEvents.forEach((event) =>
             window.removeEventListener(event, recordUserActivity),
         );
-        removeFinishListener?.();
+        removeServerContactListeners?.();
         channel?.close();
         clearInterval(ticker);
     });

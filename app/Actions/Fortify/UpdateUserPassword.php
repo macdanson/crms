@@ -36,6 +36,5 @@ class UpdateUserPassword implements UpdatesUserPasswords
             'password' => Hash::make($input['password']),
             'password_changed_at' => now(),
         ])->save();
-
     }
 }

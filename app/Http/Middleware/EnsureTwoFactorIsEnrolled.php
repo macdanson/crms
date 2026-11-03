@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\ResponseFormat;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
@@ -27,7 +28,7 @@ class EnsureTwoFactorIsEnrolled
             && $user instanceof User
             && ! $user->hasEnabledTwoFactorAuthentication()
         ) {
-            if ($request->wantsJsonResponse()) {
+            if (ResponseFormat::wantsJson($request)) {
                 return response()->json(['message' => 'Multi-factor authentication enrolment is required.'], 403);
             }
 

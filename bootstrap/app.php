@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureTwoFactorIsEnrolled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequirePasswordConfirmation;
 use App\Http\Middleware\SetSecurityHeaders;
+use App\Http\ResponseFormat;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -41,14 +42,23 @@ return Application::configure(basePath: dirname(__DIR__))
             'password.confirm' => RequirePasswordConfirmation::class,
         ]);
 
-        $middleware->redirectGuestsTo(fn () => route('login'));
+        // Keep any message flashed when the session ended (such as after a
+        // heartbeat found it timed out) for the sign-in page this redirect
+        // leads to; otherwise the redirect itself would use it up.
+        $middleware->redirectGuestsTo(function (Request $request): string {
+            if ($request->hasSession()) {
+                $request->session()->reflash();
+            }
+
+            return route('login');
+        });
         $middleware->redirectUsersTo(fn () => route('dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => $request->wantsJsonResponse());
+        $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => ResponseFormat::wantsJson($request));
 
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
-            if ($request->wantsJsonResponse()) {
+            if (ResponseFormat::wantsJson($request)) {
                 return $response;
             }
 

@@ -88,3 +88,11 @@ it('returns a suspended invitation to pending instead of activating it', functio
 
     expect($user->fresh()->status)->toBe(AccountStatus::Pending);
 });
+
+it('finds the account whatever spacing or case the email is typed with', function () {
+    $user = User::factory()->create(['email' => 'officer@crms.test']);
+
+    $this->artisan('user:suspend', ['email' => '  Officer@CRMS.test ', '--reason' => 'Investigation'])->assertSuccessful();
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Suspended);
+});
