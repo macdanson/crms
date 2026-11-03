@@ -4,6 +4,8 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use App\Services\SessionPolicy;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Session\TokenMismatchException;
@@ -265,4 +267,41 @@ it('sends a guest to sign in after an expired form token', function () {
     $this->post('_test/expired-token')
         ->assertRedirect(route('login'))
         ->assertSessionHas('status', 'Your session expired. Please sign in again.');
+});
+
+/**
+ * Checks CSRF tokens in this test as in production (Laravel skips the check
+ * while running tests).
+ */
+function enforceCsrfTokens(): void
+{
+    app()->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app->make(Encrypter::class)) extends PreventRequestForgery
+    {
+        protected function runningUnitTests(): bool
+        {
+            return false;
+        }
+    });
+}
+
+it('sends a signed-in user back with GET after a stale token on an Inertia PUT', function () {
+    enforceCsrfTokens();
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->from(route('security.show'))
+        ->withHeader('X-Inertia', 'true')
+        ->put(route('user-password.update'), ['current_password' => 'x', 'password' => 'y', 'password_confirmation' => 'y'])
+        ->assertStatus(303)
+        ->assertRedirect(route('security.show'))
+        ->assertSessionHas('error', 'This page had expired, so your last action was not saved. Please try again.');
+});
+
+it('sends a guest to sign in after a stale token on an Inertia sign-in', function () {
+    enforceCsrfTokens();
+
+    $this->withHeader('X-Inertia', 'true')
+        ->post(route('login.store'), ['email' => 'someone@crms.test', 'password' => 'anything'])
+        ->assertStatus(303)
+        ->assertRedirect(route('login'));
 });

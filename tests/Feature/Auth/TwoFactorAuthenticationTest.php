@@ -2,6 +2,7 @@
 
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Services\AccountAttemptLimiter;
 use App\Services\AccountLifecycle;
 use App\Services\SecondFactor;
 use App\Services\SessionPolicy;
@@ -241,4 +242,62 @@ it('switches optional multi-factor authentication off only after proof, and sign
         ->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
         ->get(route('dashboard'))
         ->assertRedirect(route('login'));
+});
+
+it('sends a refused Inertia DELETE back with GET', function () {
+    config(['crms.auth.require_mfa' => false]);
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->from(route('security.show'))
+        ->withHeader('X-Inertia', 'true')
+        ->delete(route('two-factor.disable'))
+        ->assertStatus(303)
+        ->assertRedirect(route('security.show'));
+});
+
+it('locks authenticator code checks after five wrong codes', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        $this->postJson(route('security.second-factor.confirm'), ['code' => '000000'])->assertJsonValidationErrors('code');
+        $this->travel(13)->seconds(); // stay under the route's 5-a-minute throttle
+    }
+
+    $this->postJson(route('security.second-factor.confirm'), ['code' => currentAuthenticatorCode($user)])
+        ->assertJsonValidationErrors(['code' => 'Too many incorrect codes']);
+
+    expect(AuditEvent::where('event', 'mfa.check.locked')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('uses up a recovery code once even when two requests validated it', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $recoveryCode = $user->recoveryCodes()[0];
+    $secondFactor = app(SecondFactor::class);
+
+    // Both requests loaded the user while the code was still unused.
+    $firstRequestUser = User::find($user->id);
+    $secondRequestUser = User::find($user->id);
+
+    expect($secondFactor->consumeRecoveryCode($firstRequestUser, $recoveryCode))->toBeTrue()
+        ->and($secondFactor->consumeRecoveryCode($secondRequestUser, $recoveryCode))->toBeFalse();
+});
+
+it('does not sign out other sessions when abandoning an unconfirmed enrolment', function () {
+    config(['crms.auth.require_mfa' => false]);
+    $user = User::factory()->create();
+    $otherDeviceStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('two-factor.disable'))
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($user->fresh())
+        ->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
+        ->get(route('dashboard'))
+        ->assertOk();
 });

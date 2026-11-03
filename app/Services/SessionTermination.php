@@ -51,10 +51,8 @@ class SessionTermination
             return response()->json(['message' => $message], 401);
         }
 
-        // A 302 is right even for an Inertia PUT/DELETE: Inertia's global
-        // EnsureGetOnRedirect middleware turns it into a 303, so the browser
-        // follows it with GET.
-        return redirect()->route('login')->with('status', $message);
+        // 303, so the browser follows with GET whatever the request method.
+        return redirect()->route('login', status: 303)->with('status', $message);
     }
 
     /**

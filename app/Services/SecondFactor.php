@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Fortify\Fortify;
 
@@ -56,6 +57,27 @@ class SecondFactor
 
         return collect($user->recoveryCodes())
             ->first(fn (string $code): bool => hash_equals($code, $recoveryCode));
+    }
+
+    /**
+     * Use up a recovery code, if it is still unused. A lock stops two
+     * requests giving the same code from both succeeding.
+     */
+    public function consumeRecoveryCode(User $user, string $recoveryCode): bool
+    {
+        return Cache::lock('crms.recovery-codes.'.$user->getKey(), 10)->block(5, function () use ($user, $recoveryCode): bool {
+            $user->refresh();
+
+            $code = $this->matchingRecoveryCode($user, $recoveryCode);
+
+            if ($code === null) {
+                return false;
+            }
+
+            $user->replaceRecoveryCode($code);
+
+            return true;
+        });
     }
 
     /**

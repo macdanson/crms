@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\AuditOutcome;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Services\AccountAttemptLimiter;
 use App\Services\BrowserSessions;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
@@ -344,4 +346,52 @@ it('limits and audits wrong passwords given inside a signed-in session', functio
 
     expect(AuditEvent::where('event', 'auth.password_check.failed')->where('user_id', $user->id)->count())->toBe(5)
         ->and(AuditEvent::where('event', 'auth.password_check.locked')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('counts password guesses made in parallel before checking any of them', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+    $outcomes = [];
+    $guessesStarted = 0;
+
+    // Ten guesses, each starting before the previous one has been checked,
+    // as parallel requests would.
+    $guess = function () use (&$guess, &$outcomes, &$guessesStarted, $limiter, $user): void {
+        $guessesStarted++;
+
+        $outcomes[] = $limiter->attempt('password', $user, function () use (&$guess, &$guessesStarted): bool {
+            if ($guessesStarted < 10) {
+                $guess();
+            }
+
+            return false;
+        });
+    };
+
+    $guess();
+
+    $checked = collect($outcomes)->filter(fn (AuditOutcome $outcome): bool => $outcome === AuditOutcome::Failure);
+
+    expect($checked)->toHaveCount(AccountAttemptLimiter::MAX_ATTEMPTS);
+});
+
+it('keeps the old password if other sessions cannot be ended', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $passwordHash = $user->password;
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $this->partialMock(SessionPolicy::class)
+        ->shouldReceive('endOtherSessions')
+        ->andThrow(new RuntimeException('Session store unavailable'));
+
+    $this->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => 'Changed-Password-2026!',
+            'password_confirmation' => 'Changed-Password-2026!',
+        ])
+        ->assertServerError();
+
+    expect($user->fresh()->password)->toBe($passwordHash);
 });

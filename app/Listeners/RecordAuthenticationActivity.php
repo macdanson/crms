@@ -17,7 +17,6 @@ use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
 use Illuminate\Support\Facades\Auth;
-use Laravel\Fortify\Events\PasswordUpdatedViaController;
 use Laravel\Fortify\Events\RecoveryCodeReplaced;
 use Laravel\Fortify\Events\RecoveryCodesGenerated;
 use Laravel\Fortify\Events\TwoFactorAuthenticationChallenged;
@@ -127,18 +126,6 @@ class RecordAuthenticationActivity
     public function handlePasswordReset(PasswordReset $event): void
     {
         $this->audit->record('auth.password_reset.completed', AuditOutcome::Success, $event->user instanceof User ? $event->user : null);
-    }
-
-    public function handlePasswordUpdated(PasswordUpdatedViaController $event): void
-    {
-        $user = $event->user;
-        $session = request()->hasSession() ? request()->session() : null;
-
-        $revoked = $this->policy->endOtherSessions($user, $session);
-
-        $this->audit->record('auth.password.changed', AuditOutcome::Success, $user, [
-            'sessions_revoked' => $revoked,
-        ]);
     }
 
     public function handleTwoFactorEnabled(TwoFactorAuthenticationEnabled $event): void

@@ -5,28 +5,19 @@ namespace App\Services;
 use App\Enums\AuditOutcome;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Checks the password of a user who is already signed in (password
  * confirmation, changing the password, signing out other sessions).
  *
- * Failures are audited and limited per account, so a hijacked session
- * cannot guess the password at the rate of the general request limit.
+ * Failures are audited and limited per account (AccountAttemptLimiter).
  */
 class PasswordCheck
 {
-    /**
-     * Wrong passwords allowed per account before checks are refused.
-     */
-    private const MAX_ATTEMPTS = 5;
-
-    /**
-     * How long the attempts are counted for, in seconds.
-     */
-    private const DECAY_SECONDS = 900;
-
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(
+        private AuditLogger $audit,
+        private AccountAttemptLimiter $limiter,
+    ) {}
 
     /**
      * Check the password. Returns null when it is correct, otherwise the
@@ -36,26 +27,19 @@ class PasswordCheck
      */
     public function check(User $user, string $password, string $purpose, string $wrongPasswordMessage): ?string
     {
-        $key = 'password-check:'.$user->getKey();
+        $outcome = $this->limiter->attempt('password', $user, fn (): bool => Hash::check($password, $user->password));
 
-        if (RateLimiter::tooManyAttempts($key, self::MAX_ATTEMPTS)) {
-            $this->audit->record('auth.password_check.locked', AuditOutcome::Blocked, $user, ['purpose' => $purpose]);
+        return match ($outcome) {
+            AuditOutcome::Success => null,
+            AuditOutcome::Blocked => $this->refuse('auth.password_check.locked', $outcome, $user, $purpose, $this->limiter->lockedMessage('password', $user, 'passwords')),
+            AuditOutcome::Failure => $this->refuse('auth.password_check.failed', $outcome, $user, $purpose, $wrongPasswordMessage),
+        };
+    }
 
-            $minutes = (int) ceil(RateLimiter::availableIn($key) / 60);
+    private function refuse(string $event, AuditOutcome $outcome, User $user, string $purpose, string $message): string
+    {
+        $this->audit->record($event, $outcome, $user, ['purpose' => $purpose]);
 
-            return "Too many incorrect passwords. Try again in {$minutes} minutes.";
-        }
-
-        if (Hash::check($password, $user->password)) {
-            RateLimiter::clear($key);
-
-            return null;
-        }
-
-        RateLimiter::hit($key, self::DECAY_SECONDS);
-
-        $this->audit->record('auth.password_check.failed', AuditOutcome::Failure, $user, ['purpose' => $purpose]);
-
-        return $wrongPasswordMessage;
+        return $message;
     }
 }

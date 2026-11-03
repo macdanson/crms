@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Notifications\ResetPasswordLink;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
@@ -124,4 +126,24 @@ it('takes at least the same minimum time for an unknown email address', function
     $this->post(route('password.email'), ['email' => 'nobody@crms.test'])->assertSessionHasNoErrors();
 
     expect(microtime(true) - $startedAt)->toBeGreaterThanOrEqual(0.3);
+});
+
+it('encrypts the queued reset email, which holds a working token', function () {
+    config(['queue.default' => 'database']);
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email])->assertSessionHasNoErrors();
+
+    $command = json_decode((string) DB::table('jobs')->value('payload'), true)['data']['command'];
+
+    expect($command)->not->toContain('token')
+        ->and(Crypt::decryptString($command))->toContain('token');
+});
+
+it('hashes once for an unknown email address, as the broker does for an account', function () {
+    $hasher = Mockery::mock(app('hash'));
+    $hasher->shouldReceive('make')->once()->passthru();
+    Hash::swap($hasher);
+
+    $this->post(route('password.email'), ['email' => 'nobody@crms.test'])->assertSessionHasNoErrors();
 });

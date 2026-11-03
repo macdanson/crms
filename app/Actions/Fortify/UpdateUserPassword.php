@@ -2,9 +2,13 @@
 
 namespace App\Actions\Fortify;
 
+use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\AuditLogger;
 use App\Services\PasswordCheck;
+use App\Services\SessionPolicy;
 use Illuminate\Contracts\Validation\Validator as ValidatorContract;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -17,8 +21,8 @@ class UpdateUserPassword implements UpdatesUserPasswords
     /**
      * Validate and update the user's password.
      *
-     * Other sessions are signed out by the PasswordUpdatedViaController
-     * listener in RecordAuthenticationActivity.
+     * Other sessions are signed out in the same transaction, so none of them
+     * outlives the old password.
      *
      * @param  array<string, string>  $input
      *
@@ -49,9 +53,17 @@ class UpdateUserPassword implements UpdatesUserPasswords
             }
         })->validate();
 
-        $user->forceFill([
-            'password' => Hash::make($input['password']),
-            'password_changed_at' => now(),
-        ])->save();
+        $revoked = DB::transaction(function () use ($user, $input): int {
+            $user->forceFill([
+                'password' => Hash::make($input['password']),
+                'password_changed_at' => now(),
+            ])->save();
+
+            return app(SessionPolicy::class)->endOtherSessions($user, request()->hasSession() ? request()->session() : null);
+        });
+
+        app(AuditLogger::class)->record('auth.password.changed', AuditOutcome::Success, $user, [
+            'sessions_revoked' => $revoked,
+        ]);
     }
 }

@@ -29,10 +29,16 @@ class DisableTwoFactorAuthentication extends FortifyDisableTwoFactorAuthenticati
             ]);
         }
 
-        DB::transaction(function () use ($user): void {
+        // Abandoning an unconfirmed enrolment changes nothing that protects
+        // the account, so it does not sign anyone out.
+        $wasEnabled = $user->hasEnabledTwoFactorAuthentication();
+
+        DB::transaction(function () use ($user, $wasEnabled): void {
             parent::__invoke($user);
 
-            app(SessionPolicy::class)->endOtherSessions($user, request()->hasSession() ? request()->session() : null);
+            if ($wasEnabled) {
+                app(SessionPolicy::class)->endOtherSessions($user, request()->hasSession() ? request()->session() : null);
+            }
         });
     }
 }

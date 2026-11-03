@@ -4,6 +4,7 @@ namespace App\Http\Requests\Settings;
 
 use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\AccountAttemptLimiter;
 use App\Services\AuditLogger;
 use App\Services\SecondFactor;
 use Closure;
@@ -57,28 +58,36 @@ class SecondFactorRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
-                if ($validator->errors()->isNotEmpty() || $this->hasValidSecondFactor()) {
+                if ($validator->errors()->isNotEmpty()) {
                     return;
                 }
 
-                app(AuditLogger::class)->record($this->failureEvent(), AuditOutcome::Failure, $this->challengedUser());
+                $user = $this->challengedUser();
+                $limiter = app(AccountAttemptLimiter::class);
+                $field = $this->filled('recovery_code') ? 'recovery_code' : 'code';
 
-                $this->filled('recovery_code')
-                    ? $validator->errors()->add('recovery_code', 'That recovery code is not valid.')
-                    : $validator->errors()->add('code', 'That code is not valid. Check your authenticator app and try again.');
+                // Limited per account, not only per request, so a hijacked
+                // session cannot keep guessing codes.
+                $outcome = $limiter->attempt('second-factor', $user, fn (): bool => $this->hasValidSecondFactor());
+
+                if ($outcome === AuditOutcome::Success) {
+                    return;
+                }
+
+                if ($outcome === AuditOutcome::Blocked) {
+                    app(AuditLogger::class)->record('mfa.check.locked', AuditOutcome::Blocked, $user);
+                    $validator->errors()->add($field, $limiter->lockedMessage('second-factor', $user, 'codes'));
+
+                    return;
+                }
+
+                app(AuditLogger::class)->record($this->failureEvent(), AuditOutcome::Failure, $user);
+
+                $validator->errors()->add($field, $field === 'recovery_code'
+                    ? 'That recovery code is not valid.'
+                    : 'That code is not valid. Check your authenticator app and try again.');
             },
         ];
-    }
-
-    /**
-     * The recovery code the user gave, once validated, or null when they
-     * used their authenticator.
-     */
-    public function usedRecoveryCode(): ?string
-    {
-        return $this->filled('recovery_code')
-            ? app(SecondFactor::class)->matchingRecoveryCode($this->challengedUser(), $this->string('recovery_code')->toString())
-            : null;
     }
 
     /**

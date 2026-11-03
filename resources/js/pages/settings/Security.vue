@@ -108,6 +108,7 @@ const eventLabels: Record<string, string> = {
     'mfa.disabled': 'Multi-factor authentication switched off',
     'auth.password_check.failed': 'Incorrect password in settings',
     'auth.password_check.locked': 'Password checks locked (too many attempts)',
+    'mfa.check.locked': 'Authenticator code checks locked (too many attempts)',
 };
 
 /* Password ------------------------------------------------------------- */
@@ -129,6 +130,7 @@ function submitPassword(): void {
 /* Recovery codes ------------------------------------------------------- */
 
 const recoveryHttp = useHttp<Record<string, never>, string[]>({});
+const regenerateHttp = useHttp<Record<string, never>, unknown>({});
 const recoveryDialogOpen = ref(false);
 const visibleCodes = ref<string[]>([]);
 
@@ -146,31 +148,67 @@ async function showRecoveryCodes(): Promise<void> {
         visibleCodes.value = await recoveryHttp.get(recoveryCodesRoute.url());
         recoveryDialogOpen.value = true;
     } catch (error) {
-        const response = (
-            error as { response?: { status?: number; data?: string } }
-        )?.response;
-
-        if (response?.status === SESSION_ENDED) {
-            router.reload();
-
-            return;
-        }
-
-        if (response?.status === CONFIRMATION_REQUIRED) {
-            if (needsSecondFactor(response.data)) {
-                withSecondFactor(() => void showRecoveryCodes(), true);
-            } else {
-                // Reloading this page asks for the password, then returns here.
-                router.visit(securityShow.url());
-            }
-
-            return;
-        }
-
-        ElMessage.error(
+        handleProtectedRequestError(
+            error,
+            () => void showRecoveryCodes(),
             'Your recovery codes could not be loaded. Please try again.',
         );
     }
+}
+
+/**
+ * Replace the recovery codes, then show the new ones. Sent as JSON so a
+ * refusal (for example an expired authenticator proof) is an error, never
+ * mistaken for success.
+ */
+async function regenerateCodes(): Promise<void> {
+    try {
+        await regenerateHttp.post(regenerateRecoveryCodes.url());
+    } catch (error) {
+        handleProtectedRequestError(
+            error,
+            () => void regenerateCodes(),
+            'New recovery codes could not be generated. Please try again.',
+        );
+
+        return;
+    }
+
+    router.reload({ only: ['twoFactor', 'activity'] });
+    await showRecoveryCodes();
+}
+
+/**
+ * The server refused a recovery-code request: sign in again, prove the
+ * authenticator or the password, then retry; or report the failure.
+ */
+function handleProtectedRequestError(
+    error: unknown,
+    retry: () => void,
+    failureMessage: string,
+): void {
+    const response = (
+        error as { response?: { status?: number; data?: string } }
+    )?.response;
+
+    if (response?.status === SESSION_ENDED) {
+        router.reload();
+
+        return;
+    }
+
+    if (response?.status === CONFIRMATION_REQUIRED) {
+        if (needsSecondFactor(response.data)) {
+            withSecondFactor(retry, true);
+        } else {
+            // Reloading this page asks for the password, then returns here.
+            router.visit(securityShow.url());
+        }
+
+        return;
+    }
+
+    ElMessage.error(failureMessage);
 }
 
 function needsSecondFactor(body: string | undefined): boolean {
@@ -246,16 +284,7 @@ async function confirmRegenerateCodes(): Promise<void> {
         return;
     }
 
-    withSecondFactor(() =>
-        router.post(
-            regenerateRecoveryCodes.url(),
-            {},
-            {
-                preserveScroll: true,
-                onSuccess: () => void showRecoveryCodes(),
-            },
-        ),
-    );
+    withSecondFactor(() => void regenerateCodes());
 }
 
 function viewRecoveryCodes(): void {

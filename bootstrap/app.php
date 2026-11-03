@@ -74,12 +74,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // An expired CSRF token. If the user is still signed in (for example
             // they signed in again in another tab), send them back to try
-            // again; otherwise the session timed out. (Inertia turns these
-            // 302s into 303s for PUT/DELETE, like any other.)
+            // again; otherwise the session timed out. A 303 makes the browser
+            // follow with GET whatever the method of the failed request.
             if ($status === 419) {
                 return $request->user() !== null
-                    ? back()->with('error', 'This page had expired, so your last action was not saved. Please try again.')
-                    : redirect()->route('login')->with('status', 'Your session expired. Please sign in again.');
+                    ? back(303)->with('error', 'This page had expired, so your last action was not saved. Please try again.')
+                    : redirect()->route('login', status: 303)->with('status', 'Your session expired. Please sign in again.');
             }
 
             if ($status === 429 && $request->header('X-Inertia')) {
