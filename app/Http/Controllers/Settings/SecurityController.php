@@ -27,7 +27,7 @@ class SecurityController extends Controller
         'auth.logout', 'auth.session.expired', 'auth.password.changed',
         'auth.password_reset.completed', 'mfa.enrolment.confirmed', 'mfa.reset',
         'mfa.recovery_codes.generated', 'mfa.recovery_code.used', 'mfa.challenge.failed',
-        'auth.sessions.revoked_others', 'auth.session.revoked',
+        'auth.sessions.revoked_others', 'auth.session.revoked', 'auth.session.invalidated',
     ];
 
     public function show(Request $request, BrowserSessions $sessions): Response
@@ -49,7 +49,7 @@ class SecurityController extends Controller
                 'enabled' => $user->hasEnabledTwoFactorAuthentication(),
                 'confirmed_at' => $user->two_factor_confirmed_at?->toIso8601String(),
                 'required' => (bool) config('crms.auth.require_mfa'),
-                'recovery_codes_remaining' => $user->hasEnabledTwoFactorAuthentication() ? count($user->recoveryCodes()) : 0,
+                'recovery_codes_remaining' => $user->remainingRecoveryCodeCount(),
             ],
             'sessionsSupported' => $sessions->supported(),
             'sessions' => $sessions->forUser($user, $request->session()->getId())->values(),

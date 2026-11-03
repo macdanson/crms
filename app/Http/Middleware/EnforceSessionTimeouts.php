@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\SessionPolicy;
 use App\Services\SessionTermination;
 use Closure;
 use Illuminate\Http\Request;
@@ -15,7 +16,10 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnforceSessionTimeouts
 {
-    public function __construct(private SessionTermination $termination) {}
+    public function __construct(
+        private SessionPolicy $policy,
+        private SessionTermination $termination,
+    ) {}
 
     /**
      * Handle an incoming request.
@@ -30,29 +34,13 @@ class EnforceSessionTimeouts
             return $next($request);
         }
 
-        $session = $request->session();
-        $now = now()->getTimestamp();
-
-        $authenticatedAt = (int) $session->get('crms.authenticated_at', $now);
-        $lastActivityAt = (int) $session->get('crms.last_activity_at', $now);
-
-        $idleLimit = (int) config('crms.auth.idle_timeout') * 60;
-        $absoluteLimit = (int) config('crms.auth.absolute_lifetime') * 60;
-
-        $reason = match (true) {
-            $idleLimit > 0 && $now - $lastActivityAt >= $idleLimit => 'idle_timeout',
-            $absoluteLimit > 0 && $now - $authenticatedAt >= $absoluteLimit => 'absolute_lifetime',
-            default => null,
-        };
+        $reason = $this->policy->expiryReason($request->session());
 
         if ($reason !== null) {
             return $this->expire($request, $user, $reason);
         }
 
-        $session->put([
-            'crms.authenticated_at' => $authenticatedAt,
-            'crms.last_activity_at' => $now,
-        ]);
+        $this->policy->touch($request->session());
 
         return $next($request);
     }

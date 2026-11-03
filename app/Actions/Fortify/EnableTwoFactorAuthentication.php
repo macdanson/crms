@@ -12,10 +12,9 @@ use Laravel\Fortify\Actions\EnableTwoFactorAuthentication as FortifyEnableTwoFac
 class EnableTwoFactorAuthentication extends FortifyEnableTwoFactorAuthentication
 {
     /**
-     * @param  mixed  $user
      * @param  bool  $force
      */
-    public function __invoke($user, $force = false): void
+    public function __invoke(mixed $user, mixed $force = false): void
     {
         if ($user->two_factor_confirmed_at !== null) {
             $force = false;

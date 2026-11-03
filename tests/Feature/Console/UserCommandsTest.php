@@ -4,6 +4,7 @@ use App\Enums\AccountStatus;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\AccountInvitation;
+use App\Services\AccountLifecycle;
 use Illuminate\Support\Facades\Notification;
 
 it('invites a user from the command line', function () {
@@ -65,4 +66,25 @@ it('resets a user’s authenticator', function () {
 
 it('reports an unknown user email', function () {
     $this->artisan('user:suspend', ['email' => 'nobody@crms.test', '--reason' => 'x'])->assertFailed();
+});
+
+it('records an authenticator reset once, not as MFA being switched off', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->artisan('user:reset-mfa', ['email' => $user->email])
+        ->expectsConfirmation("Reset the authenticator for {$user->email}? Their sessions will be signed out.", 'yes')
+        ->assertSuccessful();
+
+    expect(AuditEvent::where('event', 'mfa.reset')->count())->toBe(1)
+        ->and(AuditEvent::where('event', 'mfa.disabled')->exists())->toBeFalse();
+});
+
+it('returns a suspended invitation to pending instead of activating it', function () {
+    Notification::fake();
+    $user = app(AccountLifecycle::class)->invite(['name' => 'New User', 'email' => 'new.user@crms.test']);
+
+    $this->artisan('user:suspend', ['email' => $user->email, '--reason' => 'Invited by mistake'])->assertSuccessful();
+    $this->artisan('user:reactivate', ['email' => $user->email])->assertSuccessful();
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Pending);
 });

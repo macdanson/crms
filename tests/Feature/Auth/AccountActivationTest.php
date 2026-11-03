@@ -85,7 +85,7 @@ it('does not accept an activation link twice', function () {
 it('rejects an expired activation link', function () {
     [$user, $token] = inviteUser();
 
-    $this->travel(config('crms.auth.activation_expire') + 1)->minutes();
+    $this->travel(config('auth.passwords.invitations.expire') + 1)->minutes();
 
     $this->post(route('activation.store'), [
         'token' => $token,
@@ -145,4 +145,13 @@ it('does not accept a password reset token as an activation link', function () {
     ])->assertSessionHasErrors('email');
 
     expect($user->fresh()->status)->toBe(AccountStatus::Pending);
+});
+
+it('states the activation link expiry that the token broker enforces', function () {
+    config(['auth.passwords.invitations.expire' => 120]);
+    [$user, $token] = inviteUser();
+
+    $mail = (new AccountInvitation($token))->toMail($user);
+
+    expect(implode(' ', $mail->outroLines))->toContain('expires in 2 hours');
 });

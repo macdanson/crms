@@ -1,15 +1,16 @@
 import { router, useHttp, usePage } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { logout } from '@/routes';
 import { heartbeat } from '@/routes/session';
 
 /**
- * Browser half of the idle-timeout policy (developer guide §16).
+ * Browser half of the session timeout policy (developer guide §16).
  *
  * The server is the authority: EnforceSessionTimeouts signs the user out
- * once no request has arrived for the idle window. This composable keeps the
- * server informed while the user is actively working on a page that makes
- * no requests, warns before an idle sign-out, and keeps open tabs in sync.
+ * once no request has arrived for the idle window, or once the session reaches
+ * its maximum length. This composable keeps the server informed while the
+ * user is actively working on a page that makes no requests, warns before
+ * either sign-out, and keeps open tabs in sync.
  */
 /**
  * How long to wait before retrying a heartbeat that failed for a temporary
@@ -31,8 +32,28 @@ export function useIdleTimeout() {
         Math.min(page.props.session?.idle_warning ?? 60, idleTimeout.value),
     );
 
+    const absoluteWarningWindow = computed(
+        () => page.props.session?.absolute_warning ?? 300,
+    );
+
     const showWarning = ref(false);
     const secondsRemaining = ref(0);
+    const warningReason = ref<'idle' | 'absolute'>('idle');
+
+    // Browser time at which the session reaches its maximum length.
+    let absoluteDeadline: number | null = null;
+    let absoluteWarningDismissed = false;
+
+    watch(
+        () => page.props.session?.absolute_remaining,
+        (remaining) => {
+            absoluteDeadline =
+                typeof remaining === 'number'
+                    ? Date.now() + remaining * 1000
+                    : null;
+        },
+        { immediate: true },
+    );
 
     let lastServerContact = Date.now();
     let lastUserActivity = Date.now();
@@ -103,6 +124,18 @@ export function useIdleTimeout() {
         void sendHeartbeat();
     }
 
+    /** Hide the maximum-length warning; it does not come back. */
+    function continueWorking(): void {
+        absoluteWarningDismissed = true;
+        showWarning.value = false;
+    }
+
+    function warn(reason: 'idle' | 'absolute', seconds: number): void {
+        warningReason.value = reason;
+        secondsRemaining.value = seconds;
+        showWarning.value = true;
+    }
+
     function signOutNow(): void {
         expiring = true;
         router.post(logout.url());
@@ -127,34 +160,67 @@ export function useIdleTimeout() {
     }
 
     function tick(): void {
-        if (idleTimeout.value <= 0 || expiring) {
+        if (expiring) {
             return;
         }
 
         const now = Date.now();
-        const sinceContact = (now - lastServerContact) / 1000;
-        const remaining = Math.ceil(idleTimeout.value - sinceContact);
+        const absoluteLeft =
+            absoluteDeadline === null
+                ? null
+                : Math.ceil((absoluteDeadline - now) / 1000);
 
-        // User is active but quiet: refresh the server well before expiry.
-        if (
-            lastUserActivity > lastServerContact &&
-            sinceContact >= idleTimeout.value / 3 &&
-            !showWarning.value &&
-            canSendHeartbeat()
-        ) {
-            void sendHeartbeat();
-
-            return;
-        }
-
-        if (remaining <= 0) {
+        if (absoluteLeft !== null && absoluteLeft <= 0) {
             expire();
 
             return;
         }
 
-        secondsRemaining.value = remaining;
-        showWarning.value = remaining <= warningWindow.value;
+        let idleLeft: number | null = null;
+
+        if (idleTimeout.value > 0) {
+            const sinceContact = (now - lastServerContact) / 1000;
+            const idleWarningShown =
+                showWarning.value && warningReason.value === 'idle';
+
+            idleLeft = Math.ceil(idleTimeout.value - sinceContact);
+
+            // User is active but quiet: refresh the server well before expiry.
+            if (
+                lastUserActivity > lastServerContact &&
+                sinceContact >= idleTimeout.value / 3 &&
+                !idleWarningShown &&
+                canSendHeartbeat()
+            ) {
+                void sendHeartbeat();
+
+                return;
+            }
+
+            if (idleLeft <= 0) {
+                expire();
+
+                return;
+            }
+        }
+
+        if (
+            absoluteLeft !== null &&
+            absoluteLeft <= absoluteWarningWindow.value &&
+            !absoluteWarningDismissed
+        ) {
+            warn('absolute', absoluteLeft);
+
+            return;
+        }
+
+        if (idleLeft !== null && idleLeft <= warningWindow.value) {
+            warn('idle', idleLeft);
+
+            return;
+        }
+
+        showWarning.value = false;
     }
 
     onMounted(() => {
@@ -174,7 +240,7 @@ export function useIdleTimeout() {
                 if (event.data?.type === 'contact') {
                     recordServerContact(event.data.at, false);
 
-                    if (showWarning.value) {
+                    if (showWarning.value && warningReason.value === 'idle') {
                         showWarning.value = false;
                     }
                 }
@@ -193,5 +259,12 @@ export function useIdleTimeout() {
         clearInterval(ticker);
     });
 
-    return { showWarning, secondsRemaining, staySignedIn, signOutNow };
+    return {
+        showWarning,
+        secondsRemaining,
+        warningReason,
+        staySignedIn,
+        continueWorking,
+        signOutNow,
+    };
 }

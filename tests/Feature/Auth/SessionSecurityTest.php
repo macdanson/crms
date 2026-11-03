@@ -4,6 +4,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Support\Facades\DB;
+use Inertia\Testing\AssertableInertia;
 
 it('signs the user out after the idle timeout', function () {
     $user = User::factory()->withTwoFactor()->create();
@@ -27,7 +28,7 @@ it('keeps an active user signed in when requests arrive within the idle window',
 
     foreach (range(1, 3) as $step) {
         $this->travel(config('crms.auth.idle_timeout') - 1)->minutes();
-        $this->postJson(route('session.heartbeat'))->assertOk();
+        $this->postJson(route('session.heartbeat'))->assertNoContent();
     }
 
     $this->get(route('dashboard'))->assertOk();
@@ -113,4 +114,54 @@ it('does not record the end of a suspended user’s session as a sign-out by the
 
     expect(AuditEvent::where('event', 'auth.session.terminated')->exists())->toBeTrue()
         ->and(AuditEvent::where('event', 'auth.logout')->exists())->toBeFalse();
+});
+
+it('sends an Inertia action made after the idle timeout to the sign-in page with GET', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->withHeader('X-Inertia', 'true')
+        ->delete(route('security.sessions.destroy-others'))
+        ->assertStatus(303)
+        ->assertRedirect(route('login'));
+});
+
+it('ends other sessions after an authenticator reset with any session driver', function () {
+    expect(config('session.driver'))->not->toBe('database');
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    app(AccountLifecycle::class)->resetTwoFactor($user);
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+    expect(AuditEvent::where('event', 'auth.session.invalidated')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('keeps the session of a user who replaces their own authenticator', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'))
+        ->assertRedirect(route('two-factor.setup'));
+
+    $this->get(route('two-factor.setup'))->assertOk();
+    $this->assertAuthenticatedAs($user);
+});
+
+it('tells the page how long the session has before its maximum length', function () {
+    config(['crms.auth.absolute_lifetime' => 30]);
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(10)->minutes();
+
+    $this->get(route('dashboard'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('session.absolute_remaining', 20 * 60)
+            ->where('session.absolute_warning', config('crms.auth.absolute_warning')));
 });

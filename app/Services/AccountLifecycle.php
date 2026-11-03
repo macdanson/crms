@@ -7,11 +7,11 @@ use App\Enums\AuditOutcome;
 use App\Models\User;
 use App\Notifications\AccountInvitation;
 use Illuminate\Auth\Passwords\PasswordBroker;
+use Illuminate\Contracts\Session\Session;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Laravel\Fortify\Events\TwoFactorAuthenticationDisabled;
 
 /**
  * Provisioning and lifecycle operations for user accounts (developer guide §6, §27.2).
@@ -24,6 +24,7 @@ class AccountLifecycle
     public function __construct(
         private AuditLogger $audit,
         private BrowserSessions $sessions,
+        private SessionPolicy $policy,
     ) {}
 
     /**
@@ -118,26 +119,36 @@ class AccountLifecycle
         ]);
     }
 
-    public function reactivate(User $user, ?User $actor = null): void
+    /**
+     * Lift a suspension. An account suspended before its owner activated it
+     * returns to Pending, so the owner must still prove they control the
+     * email address through the activation link.
+     */
+    public function reactivate(User $user, ?User $actor = null): AccountStatus
     {
+        $status = $user->email_verified_at === null ? AccountStatus::Pending : AccountStatus::Active;
+
         $user->forceFill([
-            'status' => AccountStatus::Active,
+            'status' => $status,
             'suspended_at' => null,
             'suspension_reason' => null,
         ])->save();
 
         $this->audit->record('account.reactivated', AuditOutcome::Success, $user, [
             'actor_id' => $actor?->getKey(),
+            'status' => $status->value,
         ]);
+
+        return $status;
     }
 
     /**
      * Clear the user's authenticator so they must enrol again at next
-     * sign-in (e.g. lost phone). Every session is revoked except
-     * $keepSessionId, the session of a user replacing their own authenticator.
-     * Any other session could otherwise enrol an authenticator of its own.
+     * sign-in (e.g. lost phone). Every session ends except $keepSession, the
+     * session of a user replacing their own authenticator. Any other session
+     * could otherwise enrol an authenticator of its own.
      */
-    public function resetTwoFactor(User $user, ?User $actor = null, ?string $keepSessionId = null): void
+    public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null): void
     {
         $user->forceFill([
             'two_factor_secret' => null,
@@ -148,11 +159,13 @@ class AccountLifecycle
             'remember_token' => Str::random(60),
         ])->save();
 
-        TwoFactorAuthenticationDisabled::dispatch($user);
+        // The stamp ends other sessions with any session driver; deleting the
+        // stored sessions (database driver only) also clears the session list.
+        $this->policy->endOtherSessions($user, $keepSession);
 
-        $revoked = $keepSessionId === null
+        $revoked = $keepSession === null
             ? $this->sessions->revokeAll($user)
-            : $this->sessions->revokeOthers($user, $keepSessionId);
+            : $this->sessions->revokeOthers($user, $keepSession->getId());
 
         $this->audit->record('mfa.reset', AuditOutcome::Success, $user, [
             'actor_id' => $actor?->getKey(),

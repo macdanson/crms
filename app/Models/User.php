@@ -33,11 +33,12 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $suspended_at
  * @property string|null $suspension_reason
  * @property string|null $remember_token
+ * @property string|null $session_stamp
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'staff_number', 'job_title', 'email', 'password'])]
-#[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
+#[Hidden(['password', 'remember_token', 'session_stamp', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -98,5 +99,13 @@ class User extends Authenticatable
             ->take(2)
             ->map(fn (string $part): string => mb_strtoupper(mb_substr($part, 0, 1)))
             ->implode('');
+    }
+
+    /**
+     * Unused recovery codes, or 0 when no authenticator is linked.
+     */
+    public function remainingRecoveryCodeCount(): int
+    {
+        return $this->hasEnabledTwoFactorAuthentication() ? count($this->recoveryCodes()) : 0;
     }
 }

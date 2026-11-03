@@ -20,7 +20,7 @@ class TwoFactorResetController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $accounts->resetTwoFactor($user, actor: $user, keepSessionId: $request->session()->getId());
+        $accounts->resetTwoFactor($user, actor: $user, keepSession: $request->session());
 
         return redirect()->route('two-factor.setup');
     }

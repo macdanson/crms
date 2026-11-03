@@ -21,6 +21,10 @@ export type SessionPolicy = {
     idle_timeout: number;
     /** Seconds of warning shown before an idle sign-out. */
     idle_warning: number;
+    /** Seconds until the session's maximum length is reached (null = none). */
+    absolute_remaining: number | null;
+    /** Seconds of warning shown before the maximum length is reached. */
+    absolute_warning: number;
 };
 
 export type Flash = {

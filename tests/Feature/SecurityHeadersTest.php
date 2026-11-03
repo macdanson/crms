@@ -1,6 +1,11 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Http\Middleware\TrustProxies;
+
+afterEach(function () {
+    TrustProxies::flushState();
+});
 
 it('sends browser hardening headers on every page', function () {
     $this->get(route('login'))
@@ -28,10 +33,19 @@ it('stops browsers caching authenticated pages', function () {
         ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
 });
 
-it('reuses a well-formed incoming request id for tracing', function () {
+it('reuses a well-formed request id sent by a trusted proxy', function () {
+    TrustProxies::at('127.0.0.1');
+
     $this->withHeader('X-Request-Id', 'edge-proxy-1234abcd')
         ->get(route('login'))
         ->assertHeader('X-Request-Id', 'edge-proxy-1234abcd');
+});
+
+it('ignores a request id sent by anyone other than a trusted proxy', function () {
+    $response = $this->withHeader('X-Request-Id', 'edge-proxy-1234abcd')->get(route('login'));
+
+    expect($response->headers->get('X-Request-Id'))->not->toBe('edge-proxy-1234abcd')
+        ->toMatch('/^[0-9a-f-]{36}$/');
 });
 
 it('keeps the session cookie on links from other sites', function () {

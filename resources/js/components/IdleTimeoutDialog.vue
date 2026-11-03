@@ -4,8 +4,16 @@ import { ElButton, ElDialog, ElIcon } from 'element-plus';
 import { computed } from 'vue';
 import { useIdleTimeout } from '@/composables/useIdleTimeout';
 
-const { showWarning, secondsRemaining, staySignedIn, signOutNow } =
-    useIdleTimeout();
+const {
+    showWarning,
+    secondsRemaining,
+    warningReason,
+    staySignedIn,
+    continueWorking,
+    signOutNow,
+} = useIdleTimeout();
+
+const isMaximumLength = computed(() => warningReason.value === 'absolute');
 
 const countdown = computed(() => {
     const minutes = Math.floor(secondsRemaining.value / 60);
@@ -34,7 +42,11 @@ const countdown = computed(() => {
                     <ElIcon :size="22"><Timer /></ElIcon>
                 </span>
                 <h2 class="text-lg font-bold text-brand-900">
-                    Are you still there?
+                    {{
+                        isMaximumLength
+                            ? 'Your session is about to end'
+                            : 'Are you still there?'
+                    }}
                 </h2>
             </div>
         </template>
@@ -42,7 +54,14 @@ const countdown = computed(() => {
             id="idle-timeout-description"
             class="text-sm leading-6 text-slate-600"
         >
-            For security, you will be signed out after a period of inactivity.
+            <template v-if="isMaximumLength">
+                For security, sessions have a maximum length. Save your work
+                now; you will need to sign in again.
+            </template>
+            <template v-else>
+                For security, you will be signed out after a period of
+                inactivity.
+            </template>
         </p>
         <p
             class="crms-code mt-4 text-center text-4xl font-semibold text-brand-900"
@@ -54,7 +73,14 @@ const countdown = computed(() => {
         <template #footer>
             <div class="flex justify-end gap-2">
                 <ElButton @click="signOutNow">Sign out now</ElButton>
-                <ElButton type="primary" @click="staySignedIn">
+                <ElButton
+                    v-if="isMaximumLength"
+                    type="primary"
+                    @click="continueWorking"
+                >
+                    Continue working
+                </ElButton>
+                <ElButton v-else type="primary" @click="staySignedIn">
                     Stay signed in
                 </ElButton>
             </div>

@@ -234,3 +234,15 @@ it('does not treat a browser update as a new device', function () {
 
     Notification::assertNothingSentTo($user);
 });
+
+it('records the sign-in under the session the user goes on to use', function () {
+    $user = User::factory()->create();
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+
+    // Fortify issues a new session ID during sign-in; the audit entry must
+    // carry the ID the session has once sign-in is complete.
+    $sessionHash = hash_hmac('sha256', session()->getId(), (string) config('app.key'));
+
+    expect(AuditEvent::where('event', 'auth.login')->sole()->session_hash)->toBe($sessionHash);
+});

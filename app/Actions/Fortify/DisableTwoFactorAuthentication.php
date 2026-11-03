@@ -13,11 +13,9 @@ use Laravel\Fortify\Actions\DisableTwoFactorAuthentication as FortifyDisableTwoF
 class DisableTwoFactorAuthentication extends FortifyDisableTwoFactorAuthentication
 {
     /**
-     * @param  mixed  $user
-     *
      * @throws ValidationException
      */
-    public function __invoke($user): void
+    public function __invoke(mixed $user): void
     {
         if (config('crms.auth.require_mfa')) {
             throw ValidationException::withMessages([

@@ -3,6 +3,7 @@
 use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\EnforceSessionTimeouts;
 use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\EnsureSessionIsCurrent;
 use App\Http\Middleware\EnsureTwoFactorIsEnrolled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequirePasswordConfirmation;
@@ -22,11 +23,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->prepend(AssignRequestId::class);
+        // Appended so it runs after TrustProxies, which it relies on.
+        $middleware->append(AssignRequestId::class);
 
         $middleware->web(append: [
             EnforceSessionTimeouts::class,
             EnsureAccountIsActive::class,
+            EnsureSessionIsCurrent::class,
             SetSecurityHeaders::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -50,7 +53,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
             $status = $response->getStatusCode();
 
-            // An expired CSRF token usually means the session timed out.
+            // An expired CSRF token usually means the session timed out. (Inertia
+            // turns this 302 into a 303 for PUT/DELETE, like any other.)
             if ($status === 419) {
                 return redirect()->route('login')->with('status', 'Your session expired. Please sign in again.');
             }

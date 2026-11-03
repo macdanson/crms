@@ -102,6 +102,7 @@ return [
 
         // Account activation links sent to newly provisioned users. They use
         // their own table so they never collide with password reset tokens.
+        // 'expire' (minutes) is also what the invitation email states.
         'invitations' => [
             'provider' => 'users',
             'table' => 'account_activation_tokens',

@@ -14,7 +14,7 @@ it('sends a reset link to a known email address', function () {
     $user = User::factory()->create();
 
     $this->post(route('password.email'), ['email' => $user->email])
-        ->assertSessionHas('status', PasswordResetLinkRequestedResponse::MESSAGE)
+        ->assertSessionHas('status', PasswordResetLinkRequestedResponse::message())
         ->assertSessionHasNoErrors();
 
     Notification::assertSentTo($user, ResetPassword::class);
@@ -24,7 +24,7 @@ it('gives an unknown email address the same response so accounts cannot be disco
     Notification::fake();
 
     $this->post(route('password.email'), ['email' => 'nobody@crms.test'])
-        ->assertSessionHas('status', PasswordResetLinkRequestedResponse::MESSAGE)
+        ->assertSessionHas('status', PasswordResetLinkRequestedResponse::message())
         ->assertSessionHasNoErrors();
 
     Notification::assertNothingSent();
@@ -89,4 +89,10 @@ it('keeps a suspended account suspended after a password reset', function () {
     ]);
 
     expect($user->fresh()->status)->toBe(AccountStatus::Suspended);
+});
+
+it('states the reset link expiry that the token broker enforces', function () {
+    config(['auth.passwords.users.expire' => 30]);
+
+    expect(PasswordResetLinkRequestedResponse::message())->toContain('expires in 30 minutes');
 });

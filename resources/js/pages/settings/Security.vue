@@ -96,6 +96,7 @@ const eventLabels: Record<string, string> = {
     'auth.password_reset.completed': 'Password reset',
     'mfa.enrolment.confirmed': 'Authenticator linked',
     'mfa.reset': 'Authenticator reset',
+    'auth.session.invalidated': 'Signed out after a security change',
     'mfa.recovery_codes.generated': 'Recovery codes regenerated',
     'mfa.recovery_code.used': 'Recovery code used',
     'mfa.challenge.failed': 'Incorrect authentication code',

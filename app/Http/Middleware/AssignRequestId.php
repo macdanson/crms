@@ -11,6 +11,10 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Gives every request a correlation ID that is attached to logs, audit
  * events and the response, so incidents can be traced end to end (§12.2).
+ *
+ * An incoming X-Request-Id is only reused from a trusted proxy (configure
+ * with trustProxies() in bootstrap/app.php). Anyone else could otherwise
+ * file their actions under another user's request ID.
  */
 class AssignRequestId
 {
@@ -23,7 +27,7 @@ class AssignRequestId
     {
         $incoming = (string) $request->headers->get('X-Request-Id');
 
-        $requestId = preg_match('/^[A-Za-z0-9\-]{8,64}$/', $incoming) === 1
+        $requestId = $request->isFromTrustedProxy() && preg_match('/^[A-Za-z0-9\-]{8,64}$/', $incoming) === 1
             ? $incoming
             : (string) Str::uuid();
 

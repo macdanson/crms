@@ -32,7 +32,7 @@ return [
     | idle_timeout:             Minutes of inactivity before forced sign-out.
     | idle_warning:             Seconds of warning shown before an idle sign-out.
     | absolute_lifetime:        Maximum minutes a session may live, active or not.
-    | activation_expire:        Minutes an account activation link remains valid.
+    | absolute_warning:         Seconds of warning shown before that maximum is reached.
     | notify_new_device:        Email users when a new device signs in.
     |
     */
@@ -42,7 +42,7 @@ return [
         'idle_timeout' => (int) env('CRMS_IDLE_TIMEOUT', 15),
         'idle_warning' => (int) env('CRMS_IDLE_WARNING', 60),
         'absolute_lifetime' => (int) env('CRMS_SESSION_ABSOLUTE_LIFETIME', 720),
-        'activation_expire' => (int) env('CRMS_ACTIVATION_EXPIRE', 4320),
+        'absolute_warning' => (int) env('CRMS_SESSION_ABSOLUTE_WARNING', 300),
         'notify_new_device' => (bool) env('CRMS_NOTIFY_NEW_DEVICE', true),
     ],
 

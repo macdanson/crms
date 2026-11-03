@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\NewDeviceSignIn;
 use App\Services\AuditLogger;
 use App\Services\BrowserSessions;
+use App\Services\SessionPolicy;
 use App\Services\SessionTermination;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
@@ -49,6 +50,7 @@ class RecordAuthenticationActivity
     public function __construct(
         private AuditLogger $audit,
         private BrowserSessions $sessions,
+        private SessionPolicy $policy,
     ) {}
 
     public function handleLogin(Login $event): void
@@ -62,11 +64,9 @@ class RecordAuthenticationActivity
         $request = request();
 
         if ($request->hasSession()) {
-            $now = now()->getTimestamp();
+            $this->policy->start($request->session(), $user);
 
             $request->session()->put([
-                'crms.authenticated_at' => $now,
-                'crms.last_activity_at' => $now,
                 // Read before last_login_* is overwritten below, so pages can
                 // show the sign-in before this one, not this one.
                 self::PREVIOUS_LOGIN => [
@@ -90,9 +90,8 @@ class RecordAuthenticationActivity
             'last_login_ip' => $request->ip(),
         ])->saveQuietly();
 
-        $this->audit->record('auth.login', AuditOutcome::Success, $user, [
-            'mfa' => $user->hasEnabledTwoFactorAuthentication(),
-        ]);
+        // The sign-in itself is audited by SignedInResponse, once Fortify has
+        // issued the session ID the user goes on to use.
     }
 
     public function handleFailed(Failed $event): void

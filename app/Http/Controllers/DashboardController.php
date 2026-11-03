@@ -21,7 +21,7 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             'security' => [
                 'mfa_enabled' => $user->hasEnabledTwoFactorAuthentication(),
-                'recovery_codes_remaining' => $user->hasEnabledTwoFactorAuthentication() ? count($user->recoveryCodes()) : 0,
+                'recovery_codes_remaining' => $user->remainingRecoveryCodeCount(),
                 'password_changed_at' => $user->password_changed_at?->toIso8601String(),
                 'previous_login' => $request->session()->get(RecordAuthenticationActivity::PREVIOUS_LOGIN),
             ],

@@ -14,12 +14,21 @@ use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
  */
 class PasswordResetLinkRequestedResponse implements FailedPasswordResetLinkRequestResponse, SuccessfulPasswordResetLinkRequestResponse
 {
-    public const MESSAGE = 'If that email address belongs to a CRMS account, a password reset link is on its way. The link expires in 60 minutes.';
-
     /**
      * Fortify passes the broker status, which is intentionally ignored.
      */
     public function __construct(public string $status = '') {}
+
+    /**
+     * The same message whatever the outcome. The expiry comes from the reset
+     * broker, so the message always matches how long the link works.
+     */
+    public static function message(): string
+    {
+        $minutes = (int) config('auth.passwords.users.expire');
+
+        return "If that email address belongs to a CRMS account, a password reset link is on its way. The link expires in {$minutes} minutes.";
+    }
 
     /**
      * @param  Request  $request
@@ -27,9 +36,9 @@ class PasswordResetLinkRequestedResponse implements FailedPasswordResetLinkReque
     public function toResponse($request): JsonResponse|RedirectResponse
     {
         if ($request->wantsJson()) {
-            return new JsonResponse(['message' => self::MESSAGE], 200);
+            return new JsonResponse(['message' => self::message()], 200);
         }
 
-        return back()->with('status', self::MESSAGE);
+        return back()->with('status', self::message());
     }
 }

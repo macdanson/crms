@@ -38,7 +38,7 @@ class AccountInvitation extends Notification
             'email' => $notifiable->getEmailForPasswordReset(),
         ]);
 
-        $hours = (int) round(config('crms.auth.activation_expire') / 60);
+        $hours = (int) round(config('auth.passwords.invitations.expire') / 60);
 
         return (new MailMessage)
             ->subject('Activate your '.config('crms.product.short_name').' account')

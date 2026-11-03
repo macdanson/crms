@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Services\SessionPolicy;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Laravel\Fortify\Fortify;
@@ -58,9 +59,11 @@ class HandleInertiaRequests extends Middleware
                     'two_factor_enabled' => $user->hasEnabledTwoFactorAuthentication(),
                 ] : null,
             ],
-            'session' => $user instanceof User ? [
-                'idle_timeout' => (int) config('crms.auth.idle_timeout') * 60,
+            'session' => $user instanceof User && $session !== null ? [
+                'idle_timeout' => app(SessionPolicy::class)->idleTimeout(),
                 'idle_warning' => (int) config('crms.auth.idle_warning'),
+                'absolute_remaining' => app(SessionPolicy::class)->absoluteRemaining($session),
+                'absolute_warning' => (int) config('crms.auth.absolute_warning'),
             ] : null,
             'flash' => [
                 'status' => $this->statusMessage($session?->get('status')),
