@@ -41,9 +41,11 @@ class ReactivateUser extends Command
 
         $status = $accounts->reactivate($user, $this->operatorAccount());
 
-        $this->components->info($status === AccountStatus::Pending
-            ? "{$user->email} is no longer suspended. The account was never activated, so they still need to use their activation link."
-            : "{$user->email} is active again.");
+        $this->components->info(match ($status) {
+            AccountStatus::Pending => "{$user->email} is no longer suspended. The account was never activated, so they still need to use their activation link.",
+            AccountStatus::Deactivated => "{$user->email} is no longer suspended, but it was deactivated before that and stays deactivated. Run this again to restore it.",
+            default => "{$user->email} is active again.",
+        });
 
         return self::SUCCESS;
     }

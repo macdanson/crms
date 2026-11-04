@@ -21,6 +21,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * While enrolling, a new secret that this session was not shown, or that can
  * no longer be read, sends the user back to the setup page, which replaces it.
+ * The same goes for the recovery codes made with it.
  *
  * Fortify registers these routes itself, so they are matched by name.
  */
@@ -30,6 +31,16 @@ class RequireSecondFactorConfirmation
      * Routes only used while enrolling.
      */
     private const ENROLMENT_ROUTES = ['two-factor.secret-key', 'two-factor.qr-code', 'two-factor.confirm'];
+
+    /**
+     * Routes only the session holding the enrolment may use while enrolling:
+     * together they hold a full copy of the second factor.
+     */
+    private const ENROLMENT_HOLDER_ROUTES = [
+        ...self::ENROLMENT_ROUTES,
+        'two-factor.recovery-codes',
+        'two-factor.regenerate-recovery-codes',
+    ];
 
     /**
      * Routes that need a recent proof of the second factor.
@@ -75,18 +86,19 @@ class RequireSecondFactorConfirmation
     }
 
     /**
-     * Fortify's enrolment routes show or confirm whatever secret is stored.
-     * Only the session that was shown it may use them; another session may
-     * know only the password. A secret that can no longer be read (for
-     * example after an app key change) would fail. Either way the setup
-     * page replaces the secret.
+     * Fortify's routes show or confirm whatever secret and recovery codes are
+     * stored. Only the session that was shown the secret may use them; another
+     * session may know only the password, and the codes keep working once the
+     * secret is confirmed. A secret that can no longer be read (for example
+     * after an app key change) would fail. Either way the setup page replaces
+     * the secret.
      *
      * @param  Closure(Request): (Response)  $next
      */
     private function duringEnrolment(Request $request, User $user, Closure $next): Response
     {
         if (
-            ! $request->routeIs(...self::ENROLMENT_ROUTES)
+            ! $request->routeIs(...self::ENROLMENT_HOLDER_ROUTES)
             || $user->two_factor_secret === null
             || ($this->secondFactor->holdsEnrolment($request->session(), $user) && ! $user->hasUnreadableTwoFactorSecret())
         ) {

@@ -443,3 +443,33 @@ it('still signs in when the new-device alert cannot be sent, and records it', fu
     expect(AuditEvent::where('event', 'auth.login')->where('user_id', $user->id)->exists())->toBeTrue()
         ->and($user->fresh()->last_login_at->isToday())->toBeTrue();
 });
+
+it('takes the same minimum time for a wrong password as for an unknown email address', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    foreach ([$user->email, 'nobody@crms.test'] as $email) {
+        $startedAt = microtime(true);
+
+        $this->post(route('login.store'), ['email' => $email, 'password' => 'wrong-password'])
+            ->assertSessionHasErrors('email');
+
+        expect(microtime(true) - $startedAt)->toBeGreaterThanOrEqual(0.5);
+    }
+});
+
+it('does not send an email address holding a NUL byte to the database', function () {
+    DB::enableQueryLog();
+
+    expect(User::findByEmail("a\0b@crms.test"))->toBeNull()
+        ->and(DB::getQueryLog())->toBeEmpty();
+
+    $this->post(route('login.store'), ['email' => "a\0b@crms.test", 'password' => 'wrong-password'])
+        ->assertSessionHasErrors('email');
+});
+
+it('answers a NUL byte in a password like any wrong password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => "wrong\0password"])
+        ->assertSessionHasErrors('email');
+});

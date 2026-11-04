@@ -27,11 +27,19 @@ trait PasswordValidationRules
     /**
      * bcrypt ignores everything after the first 72 bytes, so a longer
      * password would be weaker than it looks. Accented letters and symbols
-     * can take several bytes each, so this is checked in bytes.
+     * can take several bytes each, so this is checked in bytes. It also
+     * refuses a NUL byte outright, so that must be an error here rather than
+     * a failure when hashing.
      */
     protected function fitsPasswordHash(string $attribute, mixed $value, Closure $fail): void
     {
-        if (is_string($value) && strlen($value) > 72) {
+        if (! is_string($value)) {
+            return;
+        }
+
+        if (str_contains($value, "\0")) {
+            $fail('The password contains a character that cannot be used.');
+        } elseif (strlen($value) > 72) {
             $fail('The password is too long. Use at most 72 characters, or fewer if it includes accented letters or symbols.');
         }
     }

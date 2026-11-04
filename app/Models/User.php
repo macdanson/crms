@@ -73,12 +73,12 @@ class User extends Authenticatable
      * The account with exactly this email address, or null. Two things must
      * not reach an account: text a database collation only treats as equal
      * (invisible characters, accents), which would get around limits keyed
-     * on what was typed, and bytes that are not text, which Postgres and
-     * strict MySQL refuse with an error.
+     * on what was typed, and bytes that are not text (or a NUL, which is valid
+     * UTF-8), which Postgres and strict MySQL refuse with an error.
      */
     public static function findByEmail(string $email): ?self
     {
-        if (! mb_check_encoding($email, 'UTF-8')) {
+        if (! mb_check_encoding($email, 'UTF-8') || str_contains($email, "\0")) {
             return null;
         }
 

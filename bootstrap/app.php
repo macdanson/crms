@@ -38,7 +38,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // POST it does so anyway). The global middleware appended here run
         // outside it and must not redirect.
 
-        // Appended so they run after TrustProxies, which they rely on. Being
+        // Appended so they run after TrustProxies (configured in
+        // config/trustedproxy.php), which they rely on. Being
         // global, the security headers also cover responses that a later
         // middleware returns early (session ended, CSRF expired, 404).
         $middleware->append([ScrubUserAgent::class, AssignRequestId::class, SetSecurityHeaders::class]);

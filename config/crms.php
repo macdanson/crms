@@ -53,7 +53,7 @@ return [
         'idle_timeout' => $number('CRMS_IDLE_TIMEOUT', 15),
         'idle_warning' => $number('CRMS_IDLE_WARNING', 60),
         'absolute_lifetime' => $number('CRMS_SESSION_ABSOLUTE_LIFETIME', 720),
-        'absolute_warning' => (int) env('CRMS_SESSION_ABSOLUTE_WARNING', 300),
+        'absolute_warning' => $number('CRMS_SESSION_ABSOLUTE_WARNING', 300),
         'challenge_timeout' => $number('CRMS_CHALLENGE_TIMEOUT', 10),
         'notify_new_device' => $flag('CRMS_NOTIFY_NEW_DEVICE', true),
     ],

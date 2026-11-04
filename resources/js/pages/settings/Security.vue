@@ -30,6 +30,7 @@ import {
 } from 'element-plus';
 import { ref } from 'vue';
 import PasswordStrength from '@/components/PasswordStrength.vue';
+import { useSecondFactorProof } from '@/composables/useSecondFactorProof';
 import { formatDateTime, formatRelative } from '@/lib/utils';
 import { show as securityShow } from '@/routes/security';
 import { confirm as confirmSecondFactor } from '@/routes/security/second-factor';
@@ -225,26 +226,14 @@ function needsSecondFactor(body: string | undefined): boolean {
 
 /* Second factor -------------------------------------------------------- */
 
-/**
- * Empty a code form. Not form.reset(): after a successful submit the form's
- * defaults are the values just sent, so reset() would put a spent recovery
- * code back, and sending it again would count as a wrong guess.
- */
-function clearProof(form: {
-    code: string;
-    recovery_code: string;
-    defaults: () => unknown;
-    clearErrors: () => unknown;
-}): void {
-    form.code = '';
-    form.recovery_code = '';
-    form.defaults();
-    form.clearErrors();
-}
-
 const secondFactorOpen = ref(false);
-const secondFactorWithRecoveryCode = ref(false);
-const secondFactorForm = useForm({ code: '', recovery_code: '' });
+const {
+    form: secondFactorForm,
+    usingRecoveryCode: secondFactorWithRecoveryCode,
+    start: startSecondFactor,
+    toggleMethod: toggleSecondFactorMethod,
+    submit: sendSecondFactor,
+} = useSecondFactorProof();
 let afterSecondFactor: (() => void) | null = null;
 
 /**
@@ -259,36 +248,17 @@ function withSecondFactor(action: () => void, ask = false): void {
     }
 
     afterSecondFactor = action;
-    secondFactorWithRecoveryCode.value = false;
-    clearProof(secondFactorForm);
+    startSecondFactor();
     secondFactorOpen.value = true;
 }
 
-function toggleSecondFactorMethod(): void {
-    secondFactorWithRecoveryCode.value = !secondFactorWithRecoveryCode.value;
-    clearProof(secondFactorForm);
-}
-
 function submitSecondFactor(): void {
-    secondFactorForm
-        .transform((data) =>
-            secondFactorWithRecoveryCode.value
-                ? { recovery_code: data.recovery_code.trim() }
-                : { code: data.code.replace(/\s/g, '') },
-        )
-        .post(confirmSecondFactor.url(), {
-            preserveScroll: true,
-            onSuccess: () => {
-                secondFactorOpen.value = false;
-                const action = afterSecondFactor;
-                afterSecondFactor = null;
-                action?.();
-            },
-            onError: () => {
-                secondFactorForm.code = '';
-                secondFactorForm.recovery_code = '';
-            },
-        });
+    sendSecondFactor(confirmSecondFactor.url(), () => {
+        secondFactorOpen.value = false;
+        const action = afterSecondFactor;
+        afterSecondFactor = null;
+        action?.();
+    });
 }
 
 async function confirmRegenerateCodes(): Promise<void> {
@@ -314,35 +284,22 @@ function viewRecoveryCodes(): void {
 }
 
 const resetAuthenticatorOpen = ref(false);
-const resetWithRecoveryCode = ref(false);
-const resetForm = useForm({ code: '', recovery_code: '' });
+const {
+    form: resetForm,
+    usingRecoveryCode: resetWithRecoveryCode,
+    start: startReset,
+    toggleMethod: toggleResetMethod,
+    submit: sendReset,
+} = useSecondFactorProof();
 
 function openResetAuthenticator(): void {
-    resetWithRecoveryCode.value = false;
-    clearProof(resetForm);
+    startReset();
     resetAuthenticatorOpen.value = true;
-}
-
-function toggleResetMethod(): void {
-    resetWithRecoveryCode.value = !resetWithRecoveryCode.value;
-    clearProof(resetForm);
 }
 
 /** Replacing the authenticator needs the current code (or a recovery code). */
 function submitResetAuthenticator(): void {
-    resetForm
-        .transform((data) =>
-            resetWithRecoveryCode.value
-                ? { recovery_code: data.recovery_code.trim() }
-                : { code: data.code.replace(/\s/g, '') },
-        )
-        .post(resetTwoFactor.url(), {
-            preserveScroll: true,
-            onError: () => {
-                resetForm.code = '';
-                resetForm.recovery_code = '';
-            },
-        });
+    sendReset(resetTwoFactor.url());
 }
 
 /* Sessions ------------------------------------------------------------- */

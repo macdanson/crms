@@ -34,9 +34,13 @@ class PasswordResetLinkController extends FortifyPasswordResetLinkController
     public function store(SendPasswordResetLinkRequest $request): Responsable
     {
         return (new Timebox)->call(function () use ($request): Responsable {
-            $status = $this->broker()->sendResetLink([
-                Fortify::email() => User::normaliseEmail((string) $request->input(Fortify::email())),
-            ]);
+            $email = User::normaliseEmail((string) $request->input(Fortify::email()));
+
+            // The email rule allows a NUL byte, which the database refuses.
+            // No account has one.
+            $status = str_contains($email, "\0")
+                ? Password::INVALID_USER
+                : $this->broker()->sendResetLink([Fortify::email() => $email]);
 
             return $status === Password::RESET_LINK_SENT
                 ? app(SuccessfulPasswordResetLinkRequestResponse::class, ['status' => $status])

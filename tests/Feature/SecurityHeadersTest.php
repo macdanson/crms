@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Http\Middleware\TrustProxies;
 
@@ -75,4 +76,45 @@ it('sends hardening headers on pages that do not exist', function () {
         ->assertNotFound()
         ->assertHeader('X-Frame-Options', 'DENY')
         ->assertHeader('X-Content-Type-Options', 'nosniff');
+});
+
+it('takes the client address and HTTPS from a trusted proxy', function () {
+    config(['trustedproxy.proxies' => '10.0.0.1']);
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.1'])
+        ->withHeaders(['X-Forwarded-For' => '203.0.113.7', 'X-Forwarded-Proto' => 'https'])
+        ->post(route('login.store'), ['email' => 'nobody@crms.test', 'password' => 'wrong-password']);
+
+    $response->assertHeader('Strict-Transport-Security');
+
+    expect(AuditEvent::where('event', 'auth.login.failed')->sole()->ip_address)->toBe('203.0.113.7');
+});
+
+it('ignores forwarded addresses from anyone else', function () {
+    config(['trustedproxy.proxies' => '10.0.0.1']);
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.9'])
+        ->withHeaders(['X-Forwarded-For' => '203.0.113.7', 'X-Forwarded-Proto' => 'https'])
+        ->post(route('login.store'), ['email' => 'nobody@crms.test', 'password' => 'wrong-password']);
+
+    $response->assertHeaderMissing('Strict-Transport-Security');
+
+    expect(AuditEvent::where('event', 'auth.login.failed')->sole()->ip_address)->toBe('198.51.100.9');
+});
+
+it('reads the trusted proxies from the environment, and trusts none by default', function () {
+    expect(config('trustedproxy.proxies'))->toBeNull();
+
+    $_ENV['TRUSTED_PROXIES'] = $_SERVER['TRUSTED_PROXIES'] = '10.0.0.1,10.0.0.2';
+
+    $configured = require config_path('trustedproxy.php');
+
+    $_ENV['TRUSTED_PROXIES'] = $_SERVER['TRUSTED_PROXIES'] = '';
+
+    $blank = require config_path('trustedproxy.php');
+
+    unset($_ENV['TRUSTED_PROXIES'], $_SERVER['TRUSTED_PROXIES']);
+
+    expect($configured['proxies'])->toBe('10.0.0.1,10.0.0.2')
+        ->and($blank['proxies'])->toBeNull();
 });

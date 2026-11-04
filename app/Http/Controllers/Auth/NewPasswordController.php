@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Auth;
 
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Timebox;
+use Laravel\Fortify\Contracts\FailedPasswordResetResponse;
+use Laravel\Fortify\Fortify;
 use Laravel\Fortify\Http\Controllers\NewPasswordController as FortifyNewPasswordController;
 
 /**
@@ -22,6 +25,14 @@ class NewPasswordController extends FortifyNewPasswordController
 
     public function store(Request $request): Responsable
     {
-        return (new Timebox)->call(fn (): Responsable => parent::store($request), self::MINIMUM_DURATION);
+        return (new Timebox)->call(function () use ($request): Responsable {
+            $email = $request->input(Fortify::email());
+
+            // The email rule allows a NUL byte, which the database refuses.
+            // No account has one.
+            return is_string($email) && str_contains($email, "\0")
+                ? app(FailedPasswordResetResponse::class, ['status' => Password::INVALID_USER])
+                : parent::store($request);
+        }, self::MINIMUM_DURATION);
     }
 }

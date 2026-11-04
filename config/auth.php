@@ -1,5 +1,12 @@
 <?php
 
+/*
+ * A setting left blank or not understood takes its default. Otherwise a blank
+ * timeout would become the framework's three hours, and a blank expiry would
+ * end invitation links at once.
+ */
+$positiveNumber = static fn (string $key, int $default): int => filter_var(env($key), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false ? $default : (int) env($key);
+
 use App\Models\User;
 
 return [
@@ -106,7 +113,7 @@ return [
         'invitations' => [
             'provider' => 'users',
             'table' => 'account_activation_tokens',
-            'expire' => (int) env('CRMS_ACTIVATION_EXPIRE', 4320),
+            'expire' => $positiveNumber('CRMS_ACTIVATION_EXPIRE', 4320),
             'throttle' => 0,
         ],
     ],
@@ -122,6 +129,6 @@ return [
     |
     */
 
-    'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 900),
+    'password_timeout' => $positiveNumber('AUTH_PASSWORD_TIMEOUT', 900),
 
 ];

@@ -1100,3 +1100,27 @@ it('shows the error next to a blank code at the sign-in step', function () {
     $this->post(route('two-factor.login.store'), ['code' => '   '])->assertSessionHasErrors('code');
     $this->post(route('two-factor.login.store'), ['recovery_code' => '   '])->assertSessionHasErrors('recovery_code');
 });
+
+it('keeps the recovery codes of an enrolment from any other session', function () {
+    $user = User::factory()->create();
+    app(EnableTwoFactorAuthentication::class)($user);
+    $codes = $user->fresh()->recoveryCodes();
+
+    $this->actingAs($user->fresh())->withSession(['auth.password_confirmed_at' => time()]);
+
+    $this->getJson(route('two-factor.recovery-codes'))->assertStatus(409);
+    $this->postJson(route('two-factor.regenerate-recovery-codes'))->assertStatus(409);
+
+    expect($user->fresh()->recoveryCodes())->toBe($codes);
+});
+
+it('lets the session holding the enrolment see its recovery codes', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'))
+        ->assertOk();
+
+    $this->getJson(route('two-factor.recovery-codes'))->assertOk()->assertJsonCount(8);
+});

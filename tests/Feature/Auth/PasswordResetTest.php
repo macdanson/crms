@@ -296,3 +296,33 @@ it('ends the pause on sign-in once the password has been reset', function () {
 it('does not fail on an email given as a list in a link', function () {
     $this->get(route('password.reset', ['token' => 'a-token']).'?email[]=x')->assertOk();
 });
+
+it('refuses a new password holding a NUL byte with an error, not a failure', function () {
+    $user = User::factory()->create();
+    $password = "A-Brand-New\0-Pass-42";
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker()->createToken($user),
+        'email' => $user->email,
+        'password' => $password,
+        'password_confirmation' => $password,
+    ])->assertSessionHasErrors('password');
+});
+
+it('treats an email address holding a NUL byte as unknown on the reset forms, without querying it', function () {
+    DB::enableQueryLog();
+
+    $this->post(route('password.email'), ['email' => "a\0b@crms.test"])
+        ->assertSessionHas('status', PasswordResetLinkRequestedResponse::message());
+
+    $this->post(route('password.update'), [
+        'token' => 'not-a-token',
+        'email' => "a\0b@crms.test",
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ])->assertSessionHasErrors('email');
+
+    $bindings = collect(DB::getQueryLog())->flatMap(fn (array $query): array => $query['bindings']);
+
+    expect($bindings->filter(fn (mixed $binding): bool => is_string($binding) && str_contains($binding, "\0")))->toBeEmpty();
+});

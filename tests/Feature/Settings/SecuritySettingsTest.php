@@ -624,3 +624,32 @@ it('still lets a setting be turned off on purpose', function () {
     expect($crms['auth']['require_mfa'])->toBeFalse()
         ->and($crms['auth']['idle_timeout'])->toBe(0);
 });
+
+it('takes the remaining settings left blank as their defaults', function () {
+    $keys = ['CRMS_SESSION_ABSOLUTE_WARNING', 'AUTH_PASSWORD_TIMEOUT', 'CRMS_ACTIVATION_EXPIRE'];
+
+    foreach ($keys as $key) {
+        $_ENV[$key] = $_SERVER[$key] = '';
+    }
+
+    $crms = require config_path('crms.php');
+    $auth = require config_path('auth.php');
+
+    foreach ($keys as $key) {
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
+
+    expect($crms['auth']['absolute_warning'])->toBe(300)
+        ->and($auth['password_timeout'])->toBe(900)
+        ->and($auth['passwords']['invitations']['expire'])->toBe(4320);
+});
+
+it('keeps the password confirmation timeout from becoming the three-hour default', function () {
+    $_ENV['AUTH_PASSWORD_TIMEOUT'] = $_SERVER['AUTH_PASSWORD_TIMEOUT'] = '0';
+
+    $auth = require config_path('auth.php');
+
+    unset($_ENV['AUTH_PASSWORD_TIMEOUT'], $_SERVER['AUTH_PASSWORD_TIMEOUT']);
+
+    expect($auth['password_timeout'])->toBe(900);
+});

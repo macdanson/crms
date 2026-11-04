@@ -154,3 +154,23 @@ it('returns a suspended account to the status it had', function () {
     expect($accounts->reactivate($inUse->fresh()))->toBe(AccountStatus::Active)
         ->and($accounts->reactivate($pending->fresh()))->toBe(AccountStatus::Pending);
 });
+
+it('keeps a deactivated account deactivated when lifting a suspension on it', function () {
+    $user = User::factory()->create(['status' => AccountStatus::Deactivated]);
+    $accounts = app(AccountLifecycle::class);
+
+    $accounts->suspend($user, 'Investigation');
+
+    $this->artisan('user:reactivate', ['email' => $user->email, '--by' => 'admin@crms.test'])
+        ->expectsOutputToContain('stays deactivated')
+        ->assertSuccessful();
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Deactivated);
+
+    // Asked for again, with nothing suspended, it restores the account.
+    $this->artisan('user:reactivate', ['email' => $user->email, '--by' => 'admin@crms.test'])
+        ->expectsOutputToContain('is active again')
+        ->assertSuccessful();
+
+    expect($user->fresh()->status)->toBe(AccountStatus::Active);
+});

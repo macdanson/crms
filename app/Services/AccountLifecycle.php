@@ -156,18 +156,20 @@ class AccountLifecycle
      * Lift a suspension, returning the account to the status it had. So an
      * account suspended before its owner activated it returns to Pending,
      * and the owner must still prove they control the email address through
-     * the activation link; an account in use stays in use, even if its email
-     * address was never verified (accounts that predate activation).
+     * the activation link; a deactivated account stays deactivated; an account
+     * in use stays in use, even if its email address was never verified
+     * (accounts that predate activation).
+     *
+     * An account that is not suspended (a deactivated one) has no earlier
+     * status to return to, so it is restored to use.
      */
     public function reactivate(User $user, ?User $actor = null): AccountStatus
     {
-        $previous = AccountStatus::tryFrom((string) $user->status_before_suspension);
+        $previous = $user->status === AccountStatus::Suspended
+            ? AccountStatus::tryFrom((string) $user->status_before_suspension)
+            : null;
 
-        $status = match (true) {
-            in_array($previous, [AccountStatus::Active, AccountStatus::Pending], true) => $previous,
-            $user->email_verified_at === null => AccountStatus::Pending,
-            default => AccountStatus::Active,
-        };
+        $status = $previous ?? ($user->email_verified_at === null ? AccountStatus::Pending : AccountStatus::Active);
 
         $user->forceFill([
             'status' => $status,

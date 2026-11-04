@@ -32,9 +32,11 @@ use Illuminate\Validation\ValidationException;
 class AuthenticateUser
 {
     /**
-     * Minimum duration of a credential check, in microseconds.
+     * Minimum duration of a failed credential check, in microseconds. Longer
+     * than a password check at the configured hashing cost, or the extra work
+     * for a known email would show. The other sign-in timeboxes match it.
      */
-    private const MINIMUM_DURATION = 250_000;
+    private const MINIMUM_DURATION = 500_000;
 
     private const STAND_IN_HASH_KEY = 'crms.auth.stand_in_hash';
 
