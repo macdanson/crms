@@ -5,11 +5,17 @@ use App\Enums\AuditOutcome;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\NewDeviceSignIn;
+use App\Notifications\SignInPasswordsLocked;
+use App\Services\AccountAttemptLimiter;
+use App\Services\AuditLogger;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Testing\AssertableInertia;
 
 it('renders the sign-in page for guests', function () {
@@ -273,20 +279,26 @@ it('checks a password even for an unknown email, so both take as long', function
 it('keeps other sessions signed in when a sign-in upgrades the password hash', function () {
     $user = User::factory()->withTwoFactor()->create();
     $originalHash = $user->password;
-    Hash::driver('bcrypt')->setRounds(config('hashing.bcrypt.rounds') + 1);
 
-    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    // A real sign-in: the session holds the stamp it was given, which
+    // actingAs() would give it again on every call.
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)]);
+    $this->get(route('dashboard'))->assertOk();
+
+    Hash::driver('bcrypt')->setRounds(config('hashing.bcrypt.rounds') + 1);
 
     app(AuthenticateUser::class)(Request::create('/login', 'POST', [
         'email' => $user->email,
         'password' => UserFactory::PASSWORD,
     ]));
 
-    // Each request loads the user afresh, with the new hash.
-    $user = $user->fresh();
-    expect($user->password)->not->toBe($originalHash);
+    expect($user->fresh()->password)->not->toBe($originalHash);
 
-    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    // Each request loads the user afresh, with the new hash.
+    Auth::forgetGuards();
+
+    $this->get(route('dashboard'))->assertOk();
 });
 
 it('gives every new account a session stamp, so signing in never creates one', function () {
@@ -313,4 +325,121 @@ it('keeps the email address of a failed sign-in for an unknown account', functio
     $this->post(route('login.store'), ['email' => ' Nobody@CRMS.test ', 'password' => 'anything']);
 
     expect(AuditEvent::where('event', 'auth.login.failed')->sole()->context)->toBe(['email' => 'nobody@crms.test']);
+});
+
+it('stores a user agent that is not valid text as valid text', function () {
+    $this->withHeader('User-Agent', "Mozilla\xFF\xFE/5.0")
+        ->post(route('login.store'), ['email' => 'nobody@crms.test', 'password' => 'wrong-password'])
+        ->assertSessionHasErrors('email');
+
+    $userAgent = AuditEvent::where('event', 'auth.login.failed')->sole()->user_agent;
+
+    expect(mb_check_encoding($userAgent, 'UTF-8'))->toBeTrue()
+        ->and($userAgent)->toStartWith('Mozilla');
+});
+
+it('cuts a long user agent on a character boundary, as sessions store at most 500 bytes', function () {
+    $this->withHeader('User-Agent', str_repeat('é', 400))
+        ->post(route('login.store'), ['email' => 'nobody@crms.test', 'password' => 'wrong-password']);
+
+    $userAgent = request()->userAgent();
+
+    expect(strlen($userAgent))->toBeLessThanOrEqual(500)
+        ->and(mb_check_encoding($userAgent, 'UTF-8'))->toBeTrue();
+});
+
+it('still counts a failed sign-in when it cannot be recorded', function () {
+    Exceptions::fake();
+    $this->mock(AuditLogger::class)->shouldReceive('record')->andThrow(new RuntimeException('Database refused the record'));
+
+    $this->post(route('login.store'), ['email' => 'nobody@crms.test', 'password' => 'wrong-password'])
+        ->assertSessionHasErrors('email');
+
+    expect(RateLimiter::attempts('nobody@crms.test|127.0.0.1'))->toBe(1);
+});
+
+it('treats an email address that is not valid text as unknown', function () {
+    expect(User::findByEmail("\xFF@crms.test"))->toBeNull();
+
+    $this->post(route('login.store'), ['email' => "\xFF@crms.test", 'password' => 'wrong-password'])
+        ->assertSessionHasErrors('email');
+});
+
+it('finds an account by its email address whatever its case or spacing', function () {
+    $user = User::factory()->create(['email' => 'user@crms.test']);
+
+    expect(User::findByEmail(' USER@crms.test ')?->id)->toBe($user->id);
+});
+
+it('does not reach an account through text the database only treats as equal', function (string $variant) {
+    $user = User::factory()->create(['email' => 'alice@crms.test']);
+
+    expect(User::findByEmail($variant))->toBeNull();
+
+    $this->post(route('login.store'), ['email' => $variant, 'password' => UserFactory::PASSWORD])
+        ->assertSessionHasErrors('email');
+
+    $this->assertGuest();
+
+    expect(AuditEvent::where('event', 'auth.login.failed')->where('user_id', $user->id)->exists())->toBeFalse();
+})->with([
+    'zero-width space' => "al\u{200B}ice@crms.test",
+    'combining joiner' => "al\u{034F}ice@crms.test",
+    'variation selector' => "al\u{FE00}ice@crms.test",
+    'accent' => 'álice@crms.test',
+]);
+
+it('pauses sign-in for an account after too many wrong passwords from any address', function () {
+    Notification::fake();
+    $user = User::factory()->withTwoFactor()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    startAttemptWindow();
+
+    foreach (range(1, 20) as $attempt) {
+        $limiter->attempt(AccountAttemptLimiter::SIGN_IN_PASSWORD, $user, fn (): bool => false);
+    }
+
+    // The right password, from a new address, gets the same answer as a wrong one.
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
+        ->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD])
+        ->assertSessionHasErrors(['email' => __('auth.failed')]);
+
+    $this->assertGuest();
+
+    expect(session()->has('login.id'))->toBeFalse()
+        ->and(AuditEvent::where('event', 'auth.lockout')->where('user_id', $user->id)->exists())->toBeTrue();
+
+    Notification::assertSentToTimes($user, SignInPasswordsLocked::class, 1);
+});
+
+it('does not pause sign-in for a few wrong passwords', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    startAttemptWindow();
+
+    foreach (range(1, 19) as $attempt) {
+        $limiter->attempt(AccountAttemptLimiter::SIGN_IN_PASSWORD, $user, fn (): bool => false);
+    }
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('two-factor.login'));
+});
+
+it('still signs in when the new-device alert cannot be sent, and records it', function () {
+    Exceptions::fake();
+    $this->mock(NotificationDispatcher::class)
+        ->shouldReceive('send')
+        ->andThrow(new RuntimeException('Mail server unavailable'));
+    $user = User::factory()->create(['last_login_at' => now()->subDay()]);
+
+    $this->withHeader('User-Agent', 'Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36')
+        ->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD])
+        ->assertRedirect();
+
+    $this->assertAuthenticatedAs($user);
+
+    expect(AuditEvent::where('event', 'auth.login')->where('user_id', $user->id)->exists())->toBeTrue()
+        ->and($user->fresh()->last_login_at->isToday())->toBeTrue();
 });

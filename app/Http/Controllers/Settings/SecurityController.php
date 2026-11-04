@@ -30,6 +30,7 @@ class SecurityController extends Controller
         'mfa.recovery_codes.generated', 'mfa.recovery_code.used', 'mfa.challenge.failed',
         'auth.sessions.revoked_others', 'auth.session.revoked', 'auth.session.invalidated', 'mfa.reset.failed',
         'mfa.step_up.failed', 'auth.password_check.failed', 'auth.password_check.locked', 'mfa.disabled', 'mfa.check.locked',
+        'mfa.enrolment.failed', 'auth.access.denied', 'auth.password_reset.failed',
     ];
 
     public function show(Request $request, BrowserSessions $sessions, SecondFactor $secondFactor): Response

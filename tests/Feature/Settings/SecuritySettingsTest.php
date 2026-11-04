@@ -584,3 +584,43 @@ it('does not look up a password whose confirmation does not match', function () 
     expect($validator->errors()->first('password'))->toContain('confirmation');
     Http::assertNothingSent();
 });
+
+it('takes a setting left blank as its default, not as off', function () {
+    $keys = [
+        'CRMS_REQUIRE_MFA', 'CRMS_NOTIFY_NEW_DEVICE', 'CRMS_IDLE_TIMEOUT', 'CRMS_SESSION_ABSOLUTE_LIFETIME',
+        'CRMS_CHALLENGE_TIMEOUT', 'CRMS_CSP_ENABLED', 'CRMS_ORGANISATION', 'CRMS_TAGLINE',
+    ];
+
+    foreach ($keys as $key) {
+        $_ENV[$key] = $_SERVER[$key] = '';
+    }
+
+    $crms = require config_path('crms.php');
+
+    foreach ($keys as $key) {
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
+
+    expect($crms['auth'])->toMatchArray([
+        'require_mfa' => true,
+        'notify_new_device' => true,
+        'idle_timeout' => 15,
+        'absolute_lifetime' => 720,
+        'challenge_timeout' => 10,
+    ])
+        ->and($crms['security']['csp'])->toBeTrue()
+        ->and($crms['product']['organisation'])->toBeNull()
+        ->and($crms['product']['tagline'])->toBe('Evidence-led crime analysis');
+});
+
+it('still lets a setting be turned off on purpose', function () {
+    $_ENV['CRMS_REQUIRE_MFA'] = $_SERVER['CRMS_REQUIRE_MFA'] = 'false';
+    $_ENV['CRMS_IDLE_TIMEOUT'] = $_SERVER['CRMS_IDLE_TIMEOUT'] = '0';
+
+    $crms = require config_path('crms.php');
+
+    unset($_ENV['CRMS_REQUIRE_MFA'], $_SERVER['CRMS_REQUIRE_MFA'], $_ENV['CRMS_IDLE_TIMEOUT'], $_SERVER['CRMS_IDLE_TIMEOUT']);
+
+    expect($crms['auth']['require_mfa'])->toBeFalse()
+        ->and($crms['auth']['idle_timeout'])->toBe(0);
+});

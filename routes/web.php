@@ -28,16 +28,19 @@ Route::middleware('guest')->group(function () {
         ->name('activation.create');
 
     Route::post('activate', [AccountActivationController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,activation')
         ->name('activation.store');
 });
 
 Route::middleware('auth')->group(function () {
     Route::post('session/heartbeat', SessionHeartbeatController::class)
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:30,1,heartbeat')
         ->name('session.heartbeat');
 
+    // Shows (and creates) the secret, so it needs the same password
+    // confirmation as Fortify's own routes that show it.
     Route::get('security/two-factor/setup', [TwoFactorSetupController::class, 'show'])
+        ->middleware('password.confirm')
         ->name('two-factor.setup');
 
     Route::middleware('mfa')->group(function () {
@@ -53,11 +56,11 @@ Route::middleware('auth')->group(function () {
                 ->name('security.sessions.destroy-others');
 
             Route::post('second-factor/confirm', SecondFactorConfirmationController::class)
-                ->middleware('throttle:5,1')
+                ->middleware('throttle:5,1,second-factor')
                 ->name('security.second-factor.confirm');
 
             Route::post('two-factor/reset', TwoFactorResetController::class)
-                ->middleware('throttle:5,1')
+                ->middleware('throttle:5,1,two-factor-reset')
                 ->name('security.two-factor.reset');
         });
     });

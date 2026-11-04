@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -174,23 +175,49 @@ class SessionPolicy
      * Stored sessions (database driver only) are also deleted, so they leave
      * the session list. Returns how many stored sessions were deleted.
      *
+     * The kept session moves to a new ID, so a copy of its cookie stops
+     * working too. That is why someone who suspects a stolen cookie can act
+     * from their own browser.
+     *
      * Call it in the same database transaction as the change that requires
-     * it, so no other session sees the change before it has ended.
+     * it, so no other session sees the change before it has ended. The kept
+     * session only changes once that commits: if the change is rolled back,
+     * the user stays signed in as before.
      */
     public function endOtherSessions(User $user, ?Session $keep = null): int
     {
+        $stamp = Str::random(64);
+
         $user->forceFill([
-            'session_stamp' => Str::random(64),
-            'session_stamp_holder' => $keep === null ? null : $this->holderHash($keep),
+            'session_stamp' => $stamp,
+            'session_stamp_holder' => null,
         ])->saveQuietly();
 
         if ($keep === null) {
             return $this->sessions->revokeAll($user);
         }
 
-        $keep->put(self::STAMP, $user->session_stamp);
+        $revoked = $this->sessions->revokeOthers($user, $keep->getId());
 
-        return $this->sessions->revokeOthers($user, $keep->getId());
+        DB::afterCommit(fn () => $this->moveToNewId($keep, $user, $stamp));
+
+        return $revoked;
+    }
+
+    /**
+     * Give the kept session a new ID (destroying the old one) and the stamp.
+     */
+    private function moveToNewId(Session $keep, User $user, string $stamp): void
+    {
+        $keep->regenerate(true);
+        $keep->put(self::STAMP, $stamp);
+
+        $holder = $this->holderHash($keep);
+
+        User::query()->whereKey($user->getKey())->where('session_stamp', $stamp)->update(['session_stamp_holder' => $holder]);
+
+        $user->session_stamp_holder = $holder;
+        $user->syncOriginalAttribute('session_stamp_holder');
     }
 
     /**

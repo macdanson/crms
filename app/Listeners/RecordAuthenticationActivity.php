@@ -82,7 +82,10 @@ class RecordAuthenticationActivity
             }
         }
 
-        $this->notifyIfNewDevice($user, (string) $request->userAgent(), $request->ip());
+        // Runs inside the sign-in itself. Sending the alert must never turn a
+        // sign-in that has already happened into an error, with no record of
+        // it; a failure is reported instead.
+        rescue(fn () => $this->notifyIfNewDevice($user, (string) $request->userAgent(), $request->ip()), report: true);
 
         $user->forceFill([
             'last_login_at' => now(),
@@ -95,20 +98,23 @@ class RecordAuthenticationActivity
 
     public function handleFailed(Failed $event): void
     {
-        $email = User::normaliseEmail((string) ($event->credentials['email'] ?? ''));
+        $typedEmail = (string) ($event->credentials['email'] ?? '');
+        $email = User::normaliseEmail($typedEmail);
 
         $user = $event->user instanceof User
             ? $event->user
-            : User::query()->where('email', $email)->first();
+            : User::findByEmail($typedEmail);
 
-        $this->audit->record('auth.login.failed', AuditOutcome::Failure, $user, $this->attemptedEmail($email));
+        // Fortify counts the failure towards its limit only after this event.
+        // A record that cannot be written must not let the guess go uncounted.
+        rescue(fn () => $this->audit->record('auth.login.failed', AuditOutcome::Failure, $user, $this->attemptedEmail($email)), report: true);
     }
 
     public function handleLockout(Lockout $event): void
     {
-        $email = User::normaliseEmail((string) $event->request->input('email'));
+        $typedEmail = (string) $event->request->input('email');
 
-        $this->audit->record('auth.lockout', AuditOutcome::Blocked, User::query()->where('email', $email)->first(), $this->attemptedEmail($email));
+        $this->audit->record('auth.lockout', AuditOutcome::Blocked, User::findByEmail($typedEmail), $this->attemptedEmail(User::normaliseEmail($typedEmail)));
     }
 
     public function handleLogout(Logout $event): void

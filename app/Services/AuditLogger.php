@@ -7,6 +7,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -39,6 +40,14 @@ class AuditLogger
         ?User $user = null,
         array $context = [],
     ): AuditEvent {
+        // Set by a console command (IdentifiesOperator). The request a command
+        // sees is made up, so its address and browser say nothing.
+        $operator = Context::get('operator');
+
+        if ($operator !== null) {
+            $context = ['operator' => $operator, 'os_user' => get_current_user(), ...$context];
+        }
+
         $context = $this->sanitise($context);
         $request = request();
 
@@ -47,21 +56,22 @@ class AuditLogger
             'user_id' => $user?->getKey(),
             'event' => $event,
             'outcome' => $outcome,
-            'ip_address' => $request->ip(),
-            'user_agent' => Str::limit((string) $request->userAgent(), 509),
+            'ip_address' => $operator === null ? $request->ip() : null,
+            'user_agent' => $operator === null ? Str::limit((string) $request->userAgent(), 509) : null,
             'session_hash' => $this->sessionHash($request),
             'request_id' => Context::get('request_id'),
             'context' => $context === [] ? null : $context,
         ]);
 
-        Log::channel('audit')->info($event, [
+        // A record rolled back with its change must not stay in the log file.
+        DB::afterCommit(fn () => Log::channel('audit')->info($event, [
             'audit_id' => $auditEvent->id,
             'outcome' => $outcome->value,
             'user_id' => $user?->getKey(),
             'ip' => $auditEvent->ip_address,
             'session' => $auditEvent->session_hash,
             'context' => $context,
-        ]);
+        ]));
 
         return $auditEvent;
     }
@@ -87,6 +97,7 @@ class AuditLogger
     {
         return collect($context)
             ->reject(fn (mixed $value, string $key): bool => in_array(strtolower($key), self::REDACTED_KEYS, true))
+            ->map(fn (mixed $value): mixed => is_string($value) ? mb_scrub($value, 'UTF-8') : $value)
             ->all();
     }
 }

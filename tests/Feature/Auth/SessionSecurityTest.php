@@ -1,8 +1,11 @@
 <?php
 
+use App\Enums\AuditOutcome;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\AccountLifecycle;
+use App\Services\AuditLogger;
+use App\Services\BrowserSessions;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Encryption\Encrypter;
@@ -11,6 +14,7 @@ use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
 
@@ -331,4 +335,147 @@ it('sends an Inertia PUT made after a security change to the sign-in page with G
         ->put(route('user-password.update'), [])
         ->assertStatus(303)
         ->assertRedirect(route('login'));
+});
+
+/**
+ * Open the security page as a browser would, sending the session cookie (a
+ * test request otherwise gets a new session ID each time). Returns the ID.
+ */
+function browseWithSessionCookie(User $user): string
+{
+    test()->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+    test()->get(route('security.show'))->assertOk();
+
+    $sessionId = session()->getId();
+
+    test()->withCookie(session()->getName(), $sessionId);
+
+    return $sessionId;
+}
+
+/**
+ * The session the cookie held is gone, so a copy of the cookie is useless,
+ * and the user carries on under a new ID.
+ */
+function expectSessionMovedFrom(string $sessionId): void
+{
+    expect(session()->getId())->not->toBe($sessionId)
+        ->and(session()->getHandler()->read($sessionId))->toBe('')
+        ->and(session()->getHandler()->read(session()->getId()))->not->toBe('');
+}
+
+it('moves the session to a new ID when the password changes, so a copied cookie stops working', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = browseWithSessionCookie($user);
+
+    $this->put(route('user-password.update'), [
+        'current_password' => UserFactory::PASSWORD,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ])->assertSessionHasNoErrors();
+
+    expectSessionMovedFrom($sessionId);
+});
+
+it('moves the session to a new ID when signing out other sessions', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = browseWithSessionCookie($user);
+
+    $this->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHasNoErrors();
+
+    expectSessionMovedFrom($sessionId);
+});
+
+it('moves the session to a new ID when the authenticator is replaced', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = browseWithSessionCookie($user);
+
+    $this->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expectSessionMovedFrom($sessionId);
+});
+
+it('leaves the session alone when the security change is rolled back', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $stamp = $user->session_stamp;
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $idBefore = session()->getId();
+
+    expect(fn () => DB::transaction(function () use ($user): void {
+        app(SessionPolicy::class)->endOtherSessions($user, session()->driver());
+
+        throw new RuntimeException('The change failed');
+    }))->toThrow(RuntimeException::class);
+
+    expect(session()->getId())->toBe($idBefore)
+        ->and(session(SessionPolicy::STAMP))->toBe($stamp)
+        ->and($user->fresh()->session_stamp)->toBe($stamp);
+});
+
+it('does not write the audit log line of a change that is rolled back', function () {
+    $user = User::factory()->create();
+    Log::spy();
+
+    expect(fn () => DB::transaction(function () use ($user): void {
+        app(AuditLogger::class)->record('mfa.disabled', AuditOutcome::Success, $user);
+
+        throw new RuntimeException('The change failed');
+    }))->toThrow(RuntimeException::class);
+
+    Log::shouldNotHaveReceived('channel');
+});
+
+it('encrypts the history, and clears it on the page after signing out', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $page = $this->actingAs($user)->get(route('dashboard'))->inertiaPage();
+
+    expect($page['encryptHistory'] ?? false)->toBeTrue()
+        ->and($page['clearHistory'] ?? false)->toBeFalse();
+
+    $this->post(route('logout'))->assertRedirect(route('login'));
+
+    expect($this->get(route('login'))->inertiaPage()['clearHistory'] ?? false)->toBeTrue();
+});
+
+it('clears the history on the page after a session times out', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+
+    expect($this->get(route('login'))->inertiaPage()['clearHistory'] ?? false)->toBeTrue();
+});
+
+it('keeps separate request limits for separate routes', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+
+    foreach (range(1, 6) as $heartbeat) {
+        $this->post(route('session.heartbeat'))->assertNoContent();
+    }
+
+    $this->post(route('security.second-factor.confirm'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect();
+});
+
+it('does not list a stored session that has ended', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+
+    DB::table('sessions')->insert([
+        'id' => 'ended-session-id',
+        'user_id' => $user->id,
+        'ip_address' => '10.20.30.40',
+        'user_agent' => 'Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36',
+        'payload' => base64_encode(serialize([])),
+        'last_activity' => now()->subMinutes((int) config('crms.auth.idle_timeout') + 1)->getTimestamp(),
+    ]);
+
+    expect(app(BrowserSessions::class)->forUser($user, 'current-session-id'))->toBeEmpty();
 });

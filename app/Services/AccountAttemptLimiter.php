@@ -41,6 +41,20 @@ class AccountAttemptLimiter
     public const DECAY_SECONDS = 900;
 
     /**
+     * Wrong passwords at the sign-in form. Anyone can give these for any
+     * account, so the limit is higher than for someone already signed in: a
+     * stranger should not easily pause the owner's sign-in.
+     */
+    public const SIGN_IN_PASSWORD = 'sign-in-password';
+
+    /**
+     * Limits that differ from MAX_ATTEMPTS, by what is being guessed.
+     *
+     * @var array<string, int>
+     */
+    private const LIMITS = [self::SIGN_IN_PASSWORD => 20];
+
+    /**
      * Count an attempt, then run the check unless the limit is reached.
      *
      * @param  string  $secret  What is being guessed, e.g. "password".
@@ -57,7 +71,7 @@ class AccountAttemptLimiter
         // Kept for two windows: in the next one it is the previous count.
         $hits = RateLimiter::hit($key, 2 * self::DECAY_SECONDS);
 
-        if ($this->exceedsLimit($hits, $this->countIn($secret, $user, $window - 1))) {
+        if ($this->exceedsLimit($secret, $hits, $this->countIn($secret, $user, $window - 1))) {
             // A refused guess is not counted, so asking again does not
             // lengthen the lock.
             $this->takeBack($key);
@@ -75,7 +89,7 @@ class AccountAttemptLimiter
         }
 
         if (! $passed) {
-            if ($this->exceedsLimit($hits + 1, $this->countIn($secret, $user, $window - 1))) {
+            if ($this->exceedsLimit($secret, $hits + 1, $this->countIn($secret, $user, $window - 1))) {
                 $this->reachedLimit($secret, $user, $onLock);
             }
 
@@ -107,16 +121,29 @@ class AccountAttemptLimiter
         $previous = $this->countIn($secret, $user, $window - 1);
 
         // Later in this window, as the previous window's share shrinks...
-        $offset = $this->earliestAllowedOffset($current + 1, $previous);
+        $offset = $this->earliestAllowedOffset($secret, $current + 1, $previous);
 
         if ($offset !== null) {
             return CarbonImmutable::createFromTimestamp(max($now, $windowStart + $offset));
         }
 
         // ...or in the next window, where this window becomes the previous one.
-        $offset = $this->earliestAllowedOffset(1, $current) ?? self::DECAY_SECONDS;
+        $offset = $this->earliestAllowedOffset($secret, 1, $current) ?? self::DECAY_SECONDS;
 
         return CarbonImmutable::createFromTimestamp($windowStart + self::DECAY_SECONDS + $offset);
+    }
+
+    /**
+     * Forget the guesses, once the owner has proved who they are some other
+     * way (a password reset through their email).
+     */
+    public function clear(string $secret, User $user): void
+    {
+        $window = $this->window();
+
+        RateLimiter::clear($this->key($secret, $user, $window));
+        RateLimiter::clear($this->key($secret, $user, $window - 1));
+        Cache::forget($this->alertKey($secret, $user));
     }
 
     /**
@@ -137,11 +164,11 @@ class AccountAttemptLimiter
      * before, are over the limit. In integer arithmetic:
      * current + previous × (time left in this window ÷ window length) > max.
      */
-    private function exceedsLimit(int $current, int $previous): bool
+    private function exceedsLimit(string $secret, int $current, int $previous): bool
     {
         $secondsLeft = self::DECAY_SECONDS - (now()->getTimestamp() % self::DECAY_SECONDS);
 
-        return $current * self::DECAY_SECONDS + $previous * $secondsLeft > self::MAX_ATTEMPTS * self::DECAY_SECONDS;
+        return $current * self::DECAY_SECONDS + $previous * $secondsLeft > $this->limit($secret) * self::DECAY_SECONDS;
     }
 
     /**
@@ -149,9 +176,9 @@ class AccountAttemptLimiter
      * $previous in the window before, are within the limit; null if never in
      * that window.
      */
-    private function earliestAllowedOffset(int $current, int $previous): ?int
+    private function earliestAllowedOffset(string $secret, int $current, int $previous): ?int
     {
-        $room = self::MAX_ATTEMPTS - $current;
+        $room = $this->limit($secret) - $current;
 
         if ($room < 0) {
             return null;
@@ -180,7 +207,7 @@ class AccountAttemptLimiter
             return;
         }
 
-        $alertKey = "{$secret}-check:{$user->getKey()}:locked";
+        $alertKey = $this->alertKey($secret, $user);
 
         // Most refused guesses come during a lock already alerted on; they
         // skip working out how long the lock lasts.
@@ -204,6 +231,16 @@ class AccountAttemptLimiter
         if (RateLimiter::decrement($key, 2 * self::DECAY_SECONDS) < 0) {
             RateLimiter::clear($key);
         }
+    }
+
+    private function limit(string $secret): int
+    {
+        return self::LIMITS[$secret] ?? self::MAX_ATTEMPTS;
+    }
+
+    private function alertKey(string $secret, User $user): string
+    {
+        return "{$secret}-check:{$user->getKey()}:locked";
     }
 
     private function countIn(string $secret, User $user, int $window): int

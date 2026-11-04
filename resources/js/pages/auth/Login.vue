@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Lock, Message } from '@element-plus/icons-vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { ElButton, ElForm, ElFormItem, ElInput } from 'element-plus';
 import AuthHeading from '@/components/AuthHeading.vue';
 import { store } from '@/routes/login';
 import { request as passwordRequest } from '@/routes/password';
+
+const page = usePage();
 
 const form = useForm({
     email: '',
@@ -27,7 +29,11 @@ function submit(): void {
     />
 
     <ElForm label-position="top" size="large" @submit.prevent="submit">
-        <ElFormItem label="Email address" :error="form.errors.email">
+        <!-- page.props: the reason a sign-in in progress was ended elsewhere. -->
+        <ElFormItem
+            label="Email address"
+            :error="form.errors.email ?? page.props.errors.email"
+        >
             <ElInput
                 v-model="form.email"
                 v-focus

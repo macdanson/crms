@@ -4,6 +4,7 @@ namespace App\Actions\Fortify;
 
 use App\Enums\AccountStatus;
 use App\Models\User;
+use App\Services\AccountAttemptLimiter;
 use App\Services\SessionPolicy;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -15,7 +16,10 @@ class ResetUserPassword implements ResetsUserPasswords
 {
     use PasswordValidationRules;
 
-    public function __construct(private SessionPolicy $policy) {}
+    public function __construct(
+        private SessionPolicy $policy,
+        private AccountAttemptLimiter $limiter,
+    ) {}
 
     /**
      * A reset proves control of the email address, so a pending account
@@ -65,5 +69,9 @@ class ResetUserPassword implements ResetsUserPasswords
 
             $this->policy->endOtherSessions($user);
         });
+
+        // The reset proved who the owner is, so a pause caused by someone
+        // else's wrong passwords no longer applies.
+        $this->limiter->clear(AccountAttemptLimiter::SIGN_IN_PASSWORD, $user);
     }
 }

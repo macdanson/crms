@@ -66,7 +66,7 @@ function submit(): void {
                 name="code"
                 inputmode="numeric"
                 autocomplete="one-time-code"
-                maxlength="6"
+                maxlength="7"
                 placeholder="000000"
                 class="crms-otp"
                 :prefix-icon="Iphone"

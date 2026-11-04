@@ -1,5 +1,14 @@
 <?php
 
+/*
+ * A setting left blank (a "KEY=" line, or a compose variable that is not set)
+ * or not understood takes its default. Otherwise a cast would quietly turn
+ * these protections off.
+ */
+$flag = static fn (string $key, bool $default): bool => filled(env($key)) ? (filter_var(env($key), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? $default) : $default;
+$number = static fn (string $key, int $default): int => filter_var(env($key), FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false ? $default : (int) env($key);
+$text = static fn (string $key, ?string $default): ?string => filled(env($key)) ? (string) env($key) : $default;
+
 return [
 
     /*
@@ -15,9 +24,9 @@ return [
     'product' => [
         'short_name' => 'CRMS',
         'full_name' => 'Crime Records Management System',
-        'organisation' => env('CRMS_ORGANISATION'),
-        'tagline' => env('CRMS_TAGLINE', 'Evidence-led crime analysis'),
-        'support_contact' => env('CRMS_SUPPORT_CONTACT', 'your system administrator'),
+        'organisation' => $text('CRMS_ORGANISATION', null),
+        'tagline' => $text('CRMS_TAGLINE', 'Evidence-led crime analysis'),
+        'support_contact' => $text('CRMS_SUPPORT_CONTACT', 'your system administrator'),
     ],
 
     /*
@@ -40,13 +49,13 @@ return [
     */
 
     'auth' => [
-        'require_mfa' => (bool) env('CRMS_REQUIRE_MFA', true),
-        'idle_timeout' => (int) env('CRMS_IDLE_TIMEOUT', 15),
-        'idle_warning' => (int) env('CRMS_IDLE_WARNING', 60),
-        'absolute_lifetime' => (int) env('CRMS_SESSION_ABSOLUTE_LIFETIME', 720),
+        'require_mfa' => $flag('CRMS_REQUIRE_MFA', true),
+        'idle_timeout' => $number('CRMS_IDLE_TIMEOUT', 15),
+        'idle_warning' => $number('CRMS_IDLE_WARNING', 60),
+        'absolute_lifetime' => $number('CRMS_SESSION_ABSOLUTE_LIFETIME', 720),
         'absolute_warning' => (int) env('CRMS_SESSION_ABSOLUTE_WARNING', 300),
-        'challenge_timeout' => (int) env('CRMS_CHALLENGE_TIMEOUT', 10),
-        'notify_new_device' => (bool) env('CRMS_NOTIFY_NEW_DEVICE', true),
+        'challenge_timeout' => $number('CRMS_CHALLENGE_TIMEOUT', 10),
+        'notify_new_device' => $flag('CRMS_NOTIFY_NEW_DEVICE', true),
     ],
 
     /*
@@ -60,7 +69,7 @@ return [
     */
 
     'security' => [
-        'csp' => (bool) env('CRMS_CSP_ENABLED', env('APP_ENV', 'production') !== 'local'),
+        'csp' => $flag('CRMS_CSP_ENABLED', env('APP_ENV', 'production') !== 'local'),
     ],
 
 ];

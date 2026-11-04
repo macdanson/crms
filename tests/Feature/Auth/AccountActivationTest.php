@@ -5,6 +5,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\AccountInvitation;
 use App\Services\AccountLifecycle;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -223,7 +224,7 @@ it('stops the old link working before a re-invite marks the account as invited a
 
     // The old link is used just as the re-invite saves the account.
     DB::listen(function (QueryExecuted $query) use (&$oldLinkActivated, $lifecycle, $user, $oldToken): void {
-        if ($oldLinkActivated !== null || ! str_starts_with($query->sql, 'update "users"')) {
+        if ($oldLinkActivated !== null || ! str_starts_with(str_replace(['"', '`'], '', $query->sql), 'update users')) {
             return;
         }
 
@@ -235,4 +236,30 @@ it('stops the old link working before a re-invite marks the account as invited a
 
     expect($oldLinkActivated)->toBeFalse()
         ->and($user->fresh()->isPending())->toBeTrue();
+});
+
+it('does not fail on an email given as a list in the activation link', function () {
+    $this->get(route('activation.create', ['token' => 'a-token']).'?email[]=x')->assertOk();
+});
+
+it('takes the same minimum time for a failed activation whether or not there is an invitation', function () {
+    $user = User::factory()->pending()->create();
+
+    foreach ([$user->email, 'nobody@crms.test'] as $email) {
+        $startedAt = microtime(true);
+
+        expect(app(AccountLifecycle::class)->activate($email, 'not-a-token', 'A-Brand-New-Pass-42'))->toBeFalse()
+            ->and(microtime(true) - $startedAt)->toBeGreaterThanOrEqual(0.5);
+    }
+});
+
+it('records the invitation even if the email cannot be sent', function () {
+    $this->mock(NotificationDispatcher::class)
+        ->shouldReceive('send')
+        ->andThrow(new RuntimeException('Mail server unavailable'));
+
+    expect(fn () => app(AccountLifecycle::class)->invite(['name' => 'Jane Akello', 'email' => 'jane@crms.test']))
+        ->toThrow(RuntimeException::class)
+        ->and(AuditEvent::where('event', 'account.invited')->exists())->toBeTrue()
+        ->and(AuditEvent::where('event', 'account.invitation.failed')->exists())->toBeTrue();
 });

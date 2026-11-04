@@ -33,6 +33,7 @@ class BrowserSessions
         }
 
         return $this->query($user)
+            ->where('last_activity', '>=', now()->subSeconds($this->aliveForSeconds())->getTimestamp())
             ->orderByDesc('last_activity')
             ->get(['id', 'ip_address', 'user_agent', 'last_activity'])
             ->map(function (object $session) use ($currentSessionId): array {
@@ -144,6 +145,18 @@ class BrowserSessions
             'platform' => $platform,
             'is_mobile' => (bool) preg_match('/Mobile|Android|iPhone|iPad/i', $userAgent),
         ];
+    }
+
+    /**
+     * How long since its last request a session can still be alive. Older
+     * stored sessions have ended; the row just has not been cleaned up yet.
+     */
+    private function aliveForSeconds(): int
+    {
+        $lifetime = (int) config('session.lifetime') * 60;
+        $idleTimeout = (int) config('crms.auth.idle_timeout') * 60;
+
+        return $idleTimeout > 0 ? min($lifetime, $idleTimeout) : $lifetime;
     }
 
     private function query(User $user): Builder

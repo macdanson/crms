@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\IdentifiesOperator;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Console\Attributes\Description;
@@ -15,15 +16,22 @@ use Illuminate\Validation\ValidationException;
     {email : Official email address of the user}
     {--name= : Full name}
     {--staff-number= : Staff or personnel number}
-    {--job-title= : Job title}')]
+    {--job-title= : Job title}
+    {--by= : Who is running this, for the audit log}')]
 #[Description('Provision a pending user account and email a single-use activation link')]
 class InviteUser extends Command
 {
+    use IdentifiesOperator;
+
     /**
      * Execute the console command.
      */
     public function handle(AccountLifecycle $accounts): int
     {
+        if (! $this->identifyOperator()) {
+            return self::FAILURE;
+        }
+
         $input = [
             'email' => User::normaliseEmail((string) $this->argument('email')),
             'name' => (string) ($this->option('name') ?: $this->ask('Full name')),
@@ -54,7 +62,7 @@ class InviteUser extends Command
                 'email' => $input['email'],
                 'staff_number' => $input['staff_number'],
                 'job_title' => $input['job_title'],
-            ]);
+            ], $this->operatorAccount());
         } catch (ValidationException $exception) {
             $this->components->error($exception->getMessage());
 

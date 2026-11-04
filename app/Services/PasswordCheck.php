@@ -26,7 +26,7 @@ class PasswordCheck
      *
      * @param  string  $purpose  What the check was for, kept in the audit record.
      */
-    public function check(User $user, string $password, string $purpose, string $wrongPasswordMessage): ?string
+    public function check(User $user, #[\SensitiveParameter] string $password, string $purpose, string $wrongPasswordMessage): ?string
     {
         $result = $this->limiter->attempt('password', $user, fn (): bool => Hash::check($password, $user->password));
 

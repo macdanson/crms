@@ -19,6 +19,19 @@ import { heartbeat } from '@/routes/session';
 const HEARTBEAT_RETRY_DELAY_MS = 30_000;
 
 /**
+ * A heartbeat tells the server the user is working, which restarts its idle
+ * clock from that moment, so the user must really have been active just now.
+ */
+const HEARTBEAT_ACTIVITY_WINDOW_MS = 60_000;
+
+/**
+ * How long to wait before asking the server again whether a session that
+ * looks over has ended, when the last check did not leave this page (offline,
+ * or the session is still alive).
+ */
+const EXPIRY_RETRY_DELAY_MS = 30_000;
+
+/**
  * Responses meaning the server-side session has really ended.
  */
 const SESSION_ENDED_STATUSES = [401, 419];
@@ -47,10 +60,20 @@ export function useIdleTimeout() {
     watch(
         () => page.props.session?.absolute_remaining,
         (remaining) => {
+            if (typeof remaining !== 'number') {
+                absoluteDeadline = null;
+
+                return;
+            }
+
+            // A session's maximum length never moves later. A larger value
+            // only means Back restored an older page's props.
+            const deadline = Date.now() + remaining * 1000;
+
             absoluteDeadline =
-                typeof remaining === 'number'
-                    ? Date.now() + remaining * 1000
-                    : null;
+                absoluteDeadline === null
+                    ? deadline
+                    : Math.min(absoluteDeadline, deadline);
         },
         { immediate: true },
     );
@@ -61,6 +84,7 @@ export function useIdleTimeout() {
     let channel: BroadcastChannel | undefined;
     let removeServerContactListeners: (() => void) | undefined;
     let expiring = false;
+    let nextExpiryCheckAt = 0;
     let heartbeatInFlight = false;
     let nextHeartbeatAllowedAt = 0;
     // The user asked to stay signed in while a heartbeat was already in flight.
@@ -119,7 +143,7 @@ export function useIdleTimeout() {
                 status !== undefined &&
                 SESSION_ENDED_STATUSES.includes(status)
             ) {
-                expire();
+                expire(true);
 
                 return;
             }
@@ -156,23 +180,41 @@ export function useIdleTimeout() {
 
     function signOutNow(): void {
         expiring = true;
-        router.post(logout.url());
+        router.post(
+            logout.url(),
+            {},
+            {
+                // A sign-out that failed (offline) must not stop the timer.
+                onFinish: () => {
+                    expiring = false;
+                },
+            },
+        );
     }
 
-    function expire(): void {
-        if (expiring) {
+    /**
+     * Visit this page again. If the session has ended, the server records it
+     * and redirects to the sign-in page. If it is still alive (this tab's
+     * clock was behind), the user stays where they were and the timer starts
+     * again.
+     *
+     * Not router.reload(): that is an async visit, and Inertia ignores an
+     * asset version change on those, so after a deployment the redirect to
+     * the sign-in page would never be followed.
+     */
+    function expire(knownToHaveEnded = false): void {
+        if (expiring || (!knownToHaveEnded && Date.now() < nextExpiryCheckAt)) {
             return;
         }
 
         expiring = true;
         showWarning.value = false;
-        // Reload this page. If the session has ended, the server records it
-        // and redirects to the sign-in page. If it is still alive (this tab's
-        // clock was behind), the user stays where they were and the timer
-        // starts again.
-        router.reload({
+        router.visit(window.location.href, {
+            preserveScroll: true,
+            preserveState: true,
             onFinish: () => {
                 expiring = false;
+                nextExpiryCheckAt = Date.now() + EXPIRY_RETRY_DELAY_MS;
             },
         });
     }
@@ -214,6 +256,7 @@ export function useIdleTimeout() {
             // User is active but quiet: refresh the server well before expiry.
             if (
                 lastUserActivity > lastServerContact &&
+                now - lastUserActivity < HEARTBEAT_ACTIVITY_WINDOW_MS &&
                 sinceContact >= idleTimeout.value / 3 &&
                 !idleWarningShown &&
                 canSendHeartbeat()

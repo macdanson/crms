@@ -19,8 +19,8 @@ use Symfony\Component\HttpFoundation\Response;
  * - viewing or replacing recovery codes, or switching multi-factor
  *   authentication off, needs a recent proof of the second factor.
  *
- * While enrolling, a new secret that can no longer be read sends the user
- * back to the setup page, which replaces it.
+ * While enrolling, a new secret that this session was not shown, or that can
+ * no longer be read, sends the user back to the setup page, which replaces it.
  *
  * Fortify registers these routes itself, so they are matched by name.
  */
@@ -75,15 +75,21 @@ class RequireSecondFactorConfirmation
     }
 
     /**
-     * Fortify's enrolment routes decrypt the new secret directly. If it can
-     * no longer be read (for example after an app key change), send the
-     * user back to the setup page, which replaces it, instead of failing.
+     * Fortify's enrolment routes show or confirm whatever secret is stored.
+     * Only the session that was shown it may use them; another session may
+     * know only the password. A secret that can no longer be read (for
+     * example after an app key change) would fail. Either way the setup
+     * page replaces the secret.
      *
      * @param  Closure(Request): (Response)  $next
      */
     private function duringEnrolment(Request $request, User $user, Closure $next): Response
     {
-        if (! $request->routeIs(...self::ENROLMENT_ROUTES) || ! $user->hasUnreadableTwoFactorSecret()) {
+        if (
+            ! $request->routeIs(...self::ENROLMENT_ROUTES)
+            || $user->two_factor_secret === null
+            || ($this->secondFactor->holdsEnrolment($request->session(), $user) && ! $user->hasUnreadableTwoFactorSecret())
+        ) {
             return $next($request);
         }
 

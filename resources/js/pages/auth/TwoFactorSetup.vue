@@ -55,8 +55,9 @@ async function copyKey(): Promise<void> {
     }
 }
 
+/** Replaces this page in the history, so Back cannot show the codes again. */
 function finish(): void {
-    router.visit(dashboard.url());
+    router.visit(dashboard.url(), { replace: true });
 }
 </script>
 
@@ -126,7 +127,7 @@ function finish(): void {
                     name="code"
                     inputmode="numeric"
                     autocomplete="one-time-code"
-                    maxlength="6"
+                    maxlength="7"
                     placeholder="000000"
                     class="crms-otp"
                     :prefix-icon="Iphone"

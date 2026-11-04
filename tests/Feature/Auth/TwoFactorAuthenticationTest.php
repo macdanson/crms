@@ -1,5 +1,7 @@
 <?php
 
+use App\Actions\Fortify\ConfirmTwoFactorAuthentication;
+use App\Actions\Fortify\EnableTwoFactorAuthentication;
 use App\Http\Requests\Settings\SecondFactorRequest;
 use App\Models\AuditEvent;
 use App\Models\User;
@@ -28,7 +30,7 @@ use PragmaRX\Google2FA\Google2FA;
  */
 function readsRecoveryCodes(QueryExecuted $query): bool
 {
-    return str_starts_with($query->sql, 'select') && str_contains($query->sql, '"two_factor_recovery_codes" from "users"');
+    return str_starts_with($query->sql, 'select') && str_contains(str_replace(['"', '`'], '', $query->sql), 'two_factor_recovery_codes from users');
 }
 
 /**
@@ -104,7 +106,9 @@ it('lets users use the system without an authenticator when MFA is not required'
 it('shows a QR code and setup key on the enrolment page without regenerating them', function () {
     $user = User::factory()->create();
 
-    $first = $this->actingAs($user)->get(route('two-factor.setup'));
+    $first = $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'));
     $first->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
         ->component('auth/TwoFactorSetup')
         ->where('step', 'scan')
@@ -119,7 +123,9 @@ it('shows a QR code and setup key on the enrolment page without regenerating the
 it('confirms enrolment with a valid code and then shows the recovery codes once', function () {
     $user = User::factory()->create();
 
-    $this->actingAs($user)->get(route('two-factor.setup'));
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'));
     $secret = Fortify::currentEncrypter()->decrypt($user->fresh()->two_factor_secret);
 
     $this->from(route('two-factor.setup'))
@@ -748,6 +754,7 @@ it('gives a half-finished enrolment a new secret when the old one cannot be read
     $user = User::factory()->create(['two_factor_secret' => 'not-a-valid-ciphertext']);
 
     $this->actingAs($user->fresh())
+        ->withSession(['auth.password_confirmed_at' => time()])
         ->get(route('two-factor.setup'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'scan')->whereType('setupKey', 'string'));
@@ -876,7 +883,7 @@ it('shows new recovery codes at the end of enrolment when the confirmed ones can
     DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
 
     $this->actingAs($user->fresh())
-        ->withSession(['status' => Fortify::TWO_FACTOR_AUTHENTICATION_CONFIRMED])
+        ->withSession(['auth.password_confirmed_at' => time(), SecondFactor::SHOW_RECOVERY_CODES => true])
         ->get(route('two-factor.setup'))
         ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'recovery')->count('recoveryCodes', 8));
 });
@@ -891,7 +898,7 @@ it('shows the recovery codes another page load already made instead of making ne
     app(GenerateNewRecoveryCodes::class)($other);
 
     $this->actingAs($user)
-        ->withSession(['status' => Fortify::TWO_FACTOR_AUTHENTICATION_CONFIRMED])
+        ->withSession(['auth.password_confirmed_at' => time(), SecondFactor::SHOW_RECOVERY_CODES => true])
         ->get(route('two-factor.setup'))
         ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'recovery')->where('recoveryCodes', $other->recoveryCodes()));
 
@@ -922,4 +929,174 @@ it('does not report an unreadable new secret that it replaces', function () {
     $this->get(route('two-factor.setup'))->assertOk();
 
     Exceptions::assertNothingReported();
+});
+
+it('asks for the password before showing or creating the enrolment secret', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('two-factor.setup'))
+        ->assertRedirect(route('password.confirm'));
+
+    expect($user->fresh()->two_factor_secret)->toBeNull();
+});
+
+it('does not ask for the password again right after signing in to enrol', function () {
+    $user = User::factory()->create();
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => UserFactory::PASSWORD]);
+
+    $this->get(route('two-factor.setup'))->assertOk();
+});
+
+it('never shows the same enrolment secret to two sessions', function () {
+    $user = User::factory()->create();
+
+    $first = $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'))
+        ->inertiaProps('setupKey');
+
+    session()->invalidate();
+    $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+
+    $second = $this->get(route('two-factor.setup'))->inertiaProps('setupKey');
+
+    expect($second)->not->toBe($first)
+        ->and($user->fresh()->twoFactorSecret())->toBe($second);
+});
+
+it('refuses the enrolment routes to a session that was not shown the secret', function () {
+    $user = User::factory()->create();
+    app(EnableTwoFactorAuthentication::class)($user);
+    $code = currentAuthenticatorCode($user);
+
+    $this->actingAs($user->fresh())->withSession(['auth.password_confirmed_at' => time()]);
+
+    $this->getJson(route('two-factor.secret-key'))->assertStatus(409);
+    $this->getJson(route('two-factor.qr-code'))->assertStatus(409);
+    $this->post(route('two-factor.confirm'), ['code' => $code])->assertRedirect(route('two-factor.setup'));
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
+});
+
+it('ends every other session, and moves this one to a new ID, when enrolment is confirmed', function () {
+    $user = User::factory()->create();
+    $otherSessionStamp = $user->session_stamp;
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'));
+
+    // Tests give a request a new session ID unless it sends the cookie.
+    $idBefore = session()->getId();
+    $this->withCookie(session()->getName(), $idBefore);
+
+    $this->from(route('two-factor.setup'))
+        ->post(route('two-factor.confirm'), ['code' => currentAuthenticatorCode($user->fresh())])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect($user->fresh()->session_stamp)->not->toBe($otherSessionStamp)
+        ->and(session()->getId())->not->toBe($idBefore)
+        ->and(session()->getHandler()->read($idBefore))->toBe('')
+        ->and(session(SessionPolicy::STAMP))->toBe($user->fresh()->session_stamp);
+});
+
+it('shows the recovery codes even if another request comes in right after confirming', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'));
+
+    $this->from(route('two-factor.setup'))
+        ->post(route('two-factor.confirm'), ['code' => currentAuthenticatorCode($user->fresh())]);
+
+    // This request would use up a flashed message.
+    $this->post(route('session.heartbeat'));
+
+    $this->get(route('two-factor.setup'))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'recovery')->has('recoveryCodes', 8));
+});
+
+it('records a wrong code during enrolment', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('two-factor.setup'));
+
+    $this->post(route('two-factor.confirm'), ['code' => '000000'])->assertSessionHasErrors('code', errorBag: 'confirmTwoFactorAuthentication');
+
+    expect(AuditEvent::where('event', 'mfa.enrolment.failed')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('does not replace a secret confirmed a moment ago, even when forced', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $secret = $user->two_factor_secret;
+
+    $loadedBeforeConfirming = $user->fresh()->forceFill(['two_factor_confirmed_at' => null]);
+
+    app(EnableTwoFactorAuthentication::class)($loadedBeforeConfirming, true);
+
+    expect($user->fresh()->two_factor_secret)->toBe($secret);
+});
+
+it('does not confirm a secret replaced after the code was given', function () {
+    $user = User::factory()->create();
+    $enable = app(EnableTwoFactorAuthentication::class);
+    $enable($user);
+    $code = currentAuthenticatorCode($user);
+
+    $loadedBeforeReplacing = $user->fresh();
+    $enable($user, true);
+
+    expect(fn () => app(ConfirmTwoFactorAuthentication::class)($loadedBeforeReplacing, $code))->toThrow(ValidationException::class)
+        ->and($user->fresh()->two_factor_confirmed_at)->toBeNull();
+});
+
+it('counts down the recovery codes as they are used', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $codes = $user->recoveryCodes();
+
+    app(SecondFactor::class)->consumeRecoveryCode($user, $codes[0]);
+
+    expect($user->fresh()->remainingRecoveryCodeCount())->toBe(7)
+        ->and($user->fresh()->recoveryCodes())->toBe(array_slice($codes, 1));
+});
+
+it('can use up every recovery code', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    foreach ($user->recoveryCodes() as $code) {
+        expect(app(SecondFactor::class)->consumeRecoveryCode($user, $code))->toBeTrue();
+    }
+
+    expect($user->fresh()->remainingRecoveryCodeCount())->toBe(0);
+});
+
+it('does not count an unreadable secret as wrong guesses, or alert about them', function () {
+    Notification::fake();
+    Exceptions::fake();
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_secret' => 'not-a-valid-ciphertext']);
+
+    startAttemptWindow();
+    startTwoFactorLogin($user);
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        $this->post(route('two-factor.login.store'), ['code' => '000000'])->assertSessionHasErrors('code');
+    }
+
+    expect(app(AccountAttemptLimiter::class)->attempts(SecondFactorCheck::AT_SIGN_IN, $user))->toBe(0);
+    Notification::assertNothingSent();
+});
+
+it('shows the error next to a blank code at the sign-in step', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+
+    $this->post(route('two-factor.login.store'), ['code' => '   '])->assertSessionHasErrors('code');
+    $this->post(route('two-factor.login.store'), ['recovery_code' => '   '])->assertSessionHasErrors('recovery_code');
 });

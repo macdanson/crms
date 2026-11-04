@@ -141,6 +141,13 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
         $user = $this->challengedUser();
         $code = $this->code;
 
+        // A secret that cannot be read matches no code (and is reported).
+        // That is not a wrong guess, and must not end in an alert saying
+        // someone may know the password.
+        if ($user->twoFactorSecret() === null) {
+            return false;
+        }
+
         if (! $this->limitedCheck($user, 'code', fn (): bool => app(SecondFactor::class)->isValidCode($user, $code))) {
             return false;
         }

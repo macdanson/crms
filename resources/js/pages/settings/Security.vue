@@ -41,6 +41,7 @@ import {
 import {
     recoveryCodes as recoveryCodesRoute,
     regenerateRecoveryCodes,
+    setup as setupTwoFactor,
 } from '@/routes/two-factor';
 import { update as updatePassword } from '@/routes/user-password';
 
@@ -109,6 +110,9 @@ const eventLabels: Record<string, string> = {
     'auth.password_check.failed': 'Incorrect password in settings',
     'auth.password_check.locked': 'Password checks locked (too many attempts)',
     'mfa.check.locked': 'Authenticator code checks locked (too many attempts)',
+    'mfa.enrolment.failed': 'Incorrect code while linking an authenticator',
+    'auth.access.denied': 'Request refused (no permission)',
+    'auth.password_reset.failed': 'Password reset refused (invalid link)',
 };
 
 /* Password ------------------------------------------------------------- */
@@ -221,6 +225,23 @@ function needsSecondFactor(body: string | undefined): boolean {
 
 /* Second factor -------------------------------------------------------- */
 
+/**
+ * Empty a code form. Not form.reset(): after a successful submit the form's
+ * defaults are the values just sent, so reset() would put a spent recovery
+ * code back, and sending it again would count as a wrong guess.
+ */
+function clearProof(form: {
+    code: string;
+    recovery_code: string;
+    defaults: () => unknown;
+    clearErrors: () => unknown;
+}): void {
+    form.code = '';
+    form.recovery_code = '';
+    form.defaults();
+    form.clearErrors();
+}
+
 const secondFactorOpen = ref(false);
 const secondFactorWithRecoveryCode = ref(false);
 const secondFactorForm = useForm({ code: '', recovery_code: '' });
@@ -239,15 +260,13 @@ function withSecondFactor(action: () => void, ask = false): void {
 
     afterSecondFactor = action;
     secondFactorWithRecoveryCode.value = false;
-    secondFactorForm.reset();
-    secondFactorForm.clearErrors();
+    clearProof(secondFactorForm);
     secondFactorOpen.value = true;
 }
 
 function toggleSecondFactorMethod(): void {
     secondFactorWithRecoveryCode.value = !secondFactorWithRecoveryCode.value;
-    secondFactorForm.reset();
-    secondFactorForm.clearErrors();
+    clearProof(secondFactorForm);
 }
 
 function submitSecondFactor(): void {
@@ -265,7 +284,10 @@ function submitSecondFactor(): void {
                 afterSecondFactor = null;
                 action?.();
             },
-            onError: () => secondFactorForm.reset(),
+            onError: () => {
+                secondFactorForm.code = '';
+                secondFactorForm.recovery_code = '';
+            },
         });
 }
 
@@ -297,15 +319,13 @@ const resetForm = useForm({ code: '', recovery_code: '' });
 
 function openResetAuthenticator(): void {
     resetWithRecoveryCode.value = false;
-    resetForm.reset();
-    resetForm.clearErrors();
+    clearProof(resetForm);
     resetAuthenticatorOpen.value = true;
 }
 
 function toggleResetMethod(): void {
     resetWithRecoveryCode.value = !resetWithRecoveryCode.value;
-    resetForm.reset();
-    resetForm.clearErrors();
+    clearProof(resetForm);
 }
 
 /** Replacing the authenticator needs the current code (or a recovery code). */
@@ -318,7 +338,10 @@ function submitResetAuthenticator(): void {
         )
         .post(resetTwoFactor.url(), {
             preserveScroll: true,
-            onError: () => resetForm.reset(),
+            onError: () => {
+                resetForm.code = '';
+                resetForm.recovery_code = '';
+            },
         });
 }
 
@@ -483,71 +506,104 @@ function submitSignOutOthers(): void {
                     </div>
                 </template>
 
-                <div class="flex items-start gap-4">
+                <div v-if="!twoFactor.enabled" class="flex items-start gap-4">
                     <span
                         class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600"
                     >
                         <ElIcon :size="22"><Iphone /></ElIcon>
                     </span>
                     <div>
-                        <p class="flex items-center gap-1.5 font-semibold">
-                            <ElIcon class="text-emerald-600"
-                                ><CircleCheckFilled
-                            /></ElIcon>
-                            Authenticator app linked
+                        <p class="font-semibold">No authenticator app linked</p>
+                        <p class="mt-1 text-sm text-slate-500">
+                            A second sign-in step keeps your account safe if
+                            your password is ever exposed.
                         </p>
-                        <p class="text-sm text-slate-500">
-                            Since {{ formatDateTime(twoFactor.confirmed_at) }}
-                        </p>
+                        <ElButton
+                            type="primary"
+                            class="mt-3"
+                            :icon="Iphone"
+                            @click="router.visit(setupTwoFactor.url())"
+                        >
+                            Link an authenticator app
+                        </ElButton>
                     </div>
                 </div>
 
-                <div
-                    class="mt-5 flex items-center justify-between rounded-lg border border-slate-200 p-4"
-                >
-                    <div class="flex items-center gap-3">
-                        <ElIcon
-                            :size="20"
-                            :class="
-                                twoFactor.recovery_codes_remaining <= 3
-                                    ? 'text-accent-700'
-                                    : 'text-slate-500'
-                            "
+                <template v-else>
+                    <div class="flex items-start gap-4">
+                        <span
+                            class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600"
                         >
-                            <WarningFilled
-                                v-if="twoFactor.recovery_codes_remaining <= 3"
-                            />
-                            <Key v-else />
-                        </ElIcon>
+                            <ElIcon :size="22"><Iphone /></ElIcon>
+                        </span>
                         <div>
-                            <p class="text-sm font-semibold">Recovery codes</p>
-                            <p class="text-xs text-slate-500">
-                                {{ twoFactor.recovery_codes_remaining }} of 8
-                                unused
+                            <p class="flex items-center gap-1.5 font-semibold">
+                                <ElIcon class="text-emerald-600"
+                                    ><CircleCheckFilled
+                                /></ElIcon>
+                                Authenticator app linked
+                            </p>
+                            <p class="text-sm text-slate-500">
+                                Since
+                                {{ formatDateTime(twoFactor.confirmed_at) }}
                             </p>
                         </div>
                     </div>
-                    <ElButton
-                        size="small"
-                        :loading="recoveryHttp.processing"
-                        @click="viewRecoveryCodes"
-                        >View</ElButton
-                    >
-                </div>
 
-                <div class="mt-5 flex flex-wrap gap-2">
-                    <ElButton :icon="Refresh" @click="confirmRegenerateCodes">
-                        New recovery codes
-                    </ElButton>
-                    <ElButton
-                        type="danger"
-                        plain
-                        :icon="Iphone"
-                        @click="openResetAuthenticator"
+                    <div
+                        class="mt-5 flex items-center justify-between rounded-lg border border-slate-200 p-4"
                     >
-                        Replace authenticator
-                    </ElButton>
-                </div>
+                        <div class="flex items-center gap-3">
+                            <ElIcon
+                                :size="20"
+                                :class="
+                                    twoFactor.recovery_codes_remaining <= 3
+                                        ? 'text-accent-700'
+                                        : 'text-slate-500'
+                                "
+                            >
+                                <WarningFilled
+                                    v-if="
+                                        twoFactor.recovery_codes_remaining <= 3
+                                    "
+                                />
+                                <Key v-else />
+                            </ElIcon>
+                            <div>
+                                <p class="text-sm font-semibold">
+                                    Recovery codes
+                                </p>
+                                <p class="text-xs text-slate-500">
+                                    {{ twoFactor.recovery_codes_remaining }} of
+                                    8 unused
+                                </p>
+                            </div>
+                        </div>
+                        <ElButton
+                            size="small"
+                            :loading="recoveryHttp.processing"
+                            @click="viewRecoveryCodes"
+                            >View</ElButton
+                        >
+                    </div>
+
+                    <div class="mt-5 flex flex-wrap gap-2">
+                        <ElButton
+                            :icon="Refresh"
+                            @click="confirmRegenerateCodes"
+                        >
+                            New recovery codes
+                        </ElButton>
+                        <ElButton
+                            type="danger"
+                            plain
+                            :icon="Iphone"
+                            @click="openResetAuthenticator"
+                        >
+                            Replace authenticator
+                        </ElButton>
+                    </div>
+                </template>
             </ElCard>
         </div>
 
@@ -564,7 +620,7 @@ function submitSignOutOthers(): void {
                         </p>
                     </div>
                     <ElButton
-                        v-if="sessions.length > 1"
+                        v-if="!sessionsSupported || sessions.length > 1"
                         :icon="SwitchButton"
                         @click="signOutOthersOpen = true"
                     >
@@ -724,7 +780,7 @@ function submitSignOutOthers(): void {
                     name="second_factor_code"
                     inputmode="numeric"
                     autocomplete="one-time-code"
-                    maxlength="6"
+                    maxlength="7"
                     placeholder="000000"
                     :prefix-icon="Iphone"
                 />
@@ -786,7 +842,7 @@ function submitSignOutOthers(): void {
                     name="code"
                     inputmode="numeric"
                     autocomplete="one-time-code"
-                    maxlength="6"
+                    maxlength="7"
                     placeholder="000000"
                     :prefix-icon="Iphone"
                 />

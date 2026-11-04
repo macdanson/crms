@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\IdentifiesOperator;
 use App\Enums\AccountStatus;
 use App\Models\User;
 use App\Services\AccountLifecycle;
@@ -9,16 +10,22 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('user:reactivate {email}')]
+#[Signature('user:reactivate {email} {--by= : Who is running this, for the audit log}')]
 #[Description('Restore access to a suspended or deactivated user account')]
 class ReactivateUser extends Command
 {
+    use IdentifiesOperator;
+
     /**
      * Execute the console command.
      */
     public function handle(AccountLifecycle $accounts): int
     {
-        $user = User::query()->where('email', User::normaliseEmail((string) $this->argument('email')))->first();
+        if (! $this->identifyOperator()) {
+            return self::FAILURE;
+        }
+
+        $user = User::findByEmail((string) $this->argument('email'));
 
         if ($user === null) {
             $this->components->error('No account matches that email address.');
@@ -32,7 +39,7 @@ class ReactivateUser extends Command
             return self::FAILURE;
         }
 
-        $status = $accounts->reactivate($user);
+        $status = $accounts->reactivate($user, $this->operatorAccount());
 
         $this->components->info($status === AccountStatus::Pending
             ? "{$user->email} is no longer suspended. The account was never activated, so they still need to use their activation link."

@@ -2,8 +2,11 @@
 
 namespace App\Actions\Fortify;
 
+use App\Enums\AttemptResult;
 use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Notifications\SignInPasswordsLocked;
+use App\Services\AccountAttemptLimiter;
 use App\Services\AuditLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -17,8 +20,14 @@ use Illuminate\Validation\ValidationException;
  *
  * Unknown emails and wrong passwords take the same time and return the same
  * generic error: an unknown email is checked against a stand-in hash, so it
- * costs as much as a real password check whatever the hashing cost. Only once the password is proven correct do we reveal that
- * an account is suspended, deactivated or not yet activated.
+ * costs as much as a real password check whatever the hashing cost. Only once
+ * the password is proven correct do we reveal that an account is suspended,
+ * deactivated or not yet activated.
+ *
+ * Fortify limits attempts per typed email and address. Wrong passwords are
+ * also limited per account, from any address (credential stuffing). A paused
+ * account answers like a wrong password, so the pause does not reveal that
+ * the account exists; the owner is told by email.
  */
 class AuthenticateUser
 {
@@ -29,23 +38,43 @@ class AuthenticateUser
 
     private const STAND_IN_HASH_KEY = 'crms.auth.stand_in_hash';
 
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(
+        private AuditLogger $audit,
+        private AccountAttemptLimiter $limiter,
+    ) {}
 
     /**
      * @throws ValidationException
      */
     public function __invoke(Request $request): ?User
     {
-        $email = User::normaliseEmail((string) $request->input('email'));
+        $email = (string) $request->input('email');
         $password = (string) $request->input('password');
 
         /** @var User|null $user */
         $user = (new Timebox)->call(function (Timebox $timebox) use ($email, $password): ?User {
-            $user = User::query()->where('email', $email)->first();
+            $user = User::findByEmail($email);
 
-            $passwordMatches = Hash::check($password, $user === null ? $this->standInHash() : $user->password);
+            if ($user === null) {
+                Hash::check($password, $this->standInHash());
 
-            if ($user === null || ! $passwordMatches) {
+                return null;
+            }
+
+            $result = $this->limiter->attempt(
+                AccountAttemptLimiter::SIGN_IN_PASSWORD,
+                $user,
+                fn (): bool => Hash::check($password, $user->password),
+                onLock: fn () => $this->alert($user),
+            );
+
+            if ($result === AttemptResult::Locked) {
+                Hash::check($password, $this->standInHash());
+
+                $this->audit->record('auth.lockout', AuditOutcome::Blocked, $user, ['scope' => 'account']);
+            }
+
+            if ($result !== AttemptResult::Passed) {
                 return null;
             }
 
@@ -75,6 +104,15 @@ class AuthenticateUser
         }
 
         return $user;
+    }
+
+    /**
+     * Sending the alert must never turn a refused sign-in into an error; a
+     * failure is reported instead.
+     */
+    private function alert(User $user): void
+    {
+        rescue(fn () => $user->notify(new SignInPasswordsLocked($this->limiter->unlocksAt(AccountAttemptLimiter::SIGN_IN_PASSWORD, $user))), report: true);
     }
 
     /**

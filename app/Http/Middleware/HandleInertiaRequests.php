@@ -4,9 +4,12 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use App\Services\SessionPolicy;
+use Closure;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 use Laravel\Fortify\Fortify;
+use Symfony\Component\HttpFoundation\Response;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -27,6 +30,25 @@ class HandleInertiaRequests extends Middleware
     public function version(Request $request): ?string
     {
         return parent::version($request);
+    }
+
+    /**
+     * Handle the incoming Inertia request.
+     *
+     * Pages keep their props in the browser's history (encrypted; see
+     * inertia.history.encrypt). However a session ended (sign-out, timeout,
+     * security change), the browser ends up on a guest page, which makes the
+     * earlier pages unreadable, so Back cannot show them to the next person.
+     *
+     * @param  Closure(Request): (Response)  $next
+     */
+    public function handle(Request $request, Closure $next): Response
+    {
+        if ($request->user() === null && $request->hasSession()) {
+            Inertia::clearHistory();
+        }
+
+        return parent::handle($request, $next);
     }
 
     /**

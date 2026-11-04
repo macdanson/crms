@@ -20,7 +20,7 @@ class AccountActivationController extends Controller
     {
         return Inertia::render('auth/ActivateAccount', [
             'token' => $token,
-            'email' => (string) $request->query('email', ''),
+            'email' => is_string($request->query('email')) ? $request->query('email') : '',
         ]);
     }
 

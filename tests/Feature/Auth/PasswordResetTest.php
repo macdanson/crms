@@ -2,8 +2,10 @@
 
 use App\Enums\AccountStatus;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
+use App\Models\AuditEvent;
 use App\Models\User;
 use App\Notifications\ResetPasswordLink;
+use App\Services\AccountAttemptLimiter;
 use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Http\RedirectResponse;
@@ -142,24 +144,28 @@ it('encrypts the queued reset email, which holds a working token', function () {
         ->and(Crypt::decryptString($command))->toContain('token');
 });
 
-it('hashes once for an unknown email address, as the broker does for an account', function () {
+it('relies on the timebox rather than a stand-in hash for an unknown email address', function () {
     $hasher = Mockery::mock(app('hash'));
-    $hasher->shouldReceive('make')->once()->passthru();
+    $hasher->shouldNotReceive('make');
     Hash::swap($hasher);
 
     $this->post(route('password.email'), ['email' => 'nobody@crms.test'])->assertSessionHasNoErrors();
 });
 
-it('hashes for a known email whose last link is too recent to send another', function () {
+it('takes the same minimum time when a link is sent as when it is not', function () {
+    Notification::fake();
     $user = User::factory()->create();
 
-    $this->post(route('password.email'), ['email' => $user->email])->assertSessionHasNoErrors();
+    // Warm up first, so start-up time is not what is measured.
+    $this->post(route('password.email'), ['email' => 'someone@crms.test']);
 
-    $hasher = Mockery::mock(app('hash'));
-    $hasher->shouldReceive('make')->once()->passthru();
-    Hash::swap($hasher);
+    foreach ([$user->email, 'nobody@crms.test', $user->email] as $email) {
+        $startedAt = microtime(true);
 
-    $this->post(route('password.email'), ['email' => $user->email])->assertSessionHasNoErrors();
+        $this->post(route('password.email'), ['email' => $email])->assertSessionHasNoErrors();
+
+        expect(microtime(true) - $startedAt)->toBeGreaterThanOrEqual(0.5);
+    }
 });
 
 it('hashes only the token when a link is sent, whatever response class is bound', function () {
@@ -225,4 +231,68 @@ it('activates an account that became pending after it was loaded for the reset',
 
     expect($returnedToPending)->toBeTrue()
         ->and($user->fresh()->status)->toBe(AccountStatus::Active);
+});
+
+it('answers a wrong reset link the same way whether or not the email has an account', function () {
+    $user = User::factory()->create();
+    $attempt = fn (string $email) => $this->post(route('password.update'), [
+        'token' => 'not-a-token',
+        'email' => $email,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ]);
+
+    $attempt($user->email)->assertSessionHasErrors('email');
+    $known = session('errors')->first('email');
+
+    $attempt('nobody@crms.test')->assertSessionHasErrors('email');
+
+    expect(session('errors')->first('email'))->toBe($known)
+        ->and(AuditEvent::where('event', 'auth.password_reset.failed')->count())->toBe(2)
+        ->and(AuditEvent::where('event', 'auth.password_reset.failed')->where('user_id', $user->id)->count())->toBe(1);
+});
+
+it('takes the same minimum time for a wrong reset link whether or not the email has an account', function () {
+    $user = User::factory()->create();
+
+    foreach ([$user->email, 'nobody@crms.test'] as $email) {
+        $startedAt = microtime(true);
+
+        $this->post(route('password.update'), [
+            'token' => 'not-a-token',
+            'email' => $email,
+            'password' => 'A-Brand-New-Pass-42',
+            'password_confirmation' => 'A-Brand-New-Pass-42',
+        ]);
+
+        expect(microtime(true) - $startedAt)->toBeGreaterThanOrEqual(0.5);
+    }
+});
+
+it('ends the pause on sign-in once the password has been reset', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    startAttemptWindow();
+
+    foreach (range(1, 21) as $attempt) {
+        $limiter->attempt(AccountAttemptLimiter::SIGN_IN_PASSWORD, $user, fn (): bool => false);
+    }
+
+    $token = Password::broker()->createToken($user);
+
+    $this->post(route('password.update'), [
+        'token' => $token,
+        'email' => $user->email,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ])->assertSessionHasNoErrors();
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'A-Brand-New-Pass-42']);
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('does not fail on an email given as a list in a link', function () {
+    $this->get(route('password.reset', ['token' => 'a-token']).'?email[]=x')->assertOk();
 });

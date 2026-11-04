@@ -2,22 +2,29 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\IdentifiesOperator;
 use App\Models\User;
 use App\Services\AccountLifecycle;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('user:reset-mfa {email}')]
+#[Signature('user:reset-mfa {email} {--by= : Who is running this, for the audit log}')]
 #[Description('Clear a user\'s authenticator (e.g. lost phone) so they must enrol again at next sign-in')]
 class ResetUserTwoFactor extends Command
 {
+    use IdentifiesOperator;
+
     /**
      * Execute the console command.
      */
     public function handle(AccountLifecycle $accounts): int
     {
-        $user = User::query()->where('email', User::normaliseEmail((string) $this->argument('email')))->first();
+        if (! $this->identifyOperator()) {
+            return self::FAILURE;
+        }
+
+        $user = User::findByEmail((string) $this->argument('email'));
 
         if ($user === null) {
             $this->components->error('No account matches that email address.');
@@ -29,7 +36,7 @@ class ResetUserTwoFactor extends Command
             return self::FAILURE;
         }
 
-        $accounts->resetTwoFactor($user, actor: null);
+        $accounts->resetTwoFactor($user, actor: $this->operatorAccount());
 
         $this->components->info('Authenticator cleared. The user will be asked to enrol again at next sign-in.');
 

@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Support\Timebox;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * Provisioning and lifecycle operations for user accounts (developer guide §6, §27.2).
@@ -23,6 +25,11 @@ use Illuminate\Validation\ValidationException;
  */
 class AccountLifecycle
 {
+    /**
+     * Minimum duration of a failed activation, in microseconds.
+     */
+    private const MINIMUM_ACTIVATION_DURATION = 500_000;
+
     public function __construct(
         private AuditLogger $audit,
         private SessionPolicy $policy,
@@ -62,11 +69,19 @@ class AccountLifecycle
             ? $this->createPendingAccount($details)
             : [$user, $this->reinvitePendingAccount($user, $details)]);
 
-        $user->notify(new AccountInvitation($token));
-
+        // The account exists from here on, so it is on record even if the
+        // email cannot be sent.
         $this->audit->record('account.invited', AuditOutcome::Success, $user, [
             'invited_by' => $invitedBy?->getKey(),
         ]);
+
+        try {
+            $user->notify(new AccountInvitation($token));
+        } catch (Throwable $exception) {
+            $this->audit->record('account.invitation.failed', AuditOutcome::Failure, $user);
+
+            throw $exception;
+        }
 
         return $user;
     }
@@ -74,37 +89,42 @@ class AccountLifecycle
     /**
      * Complete activation: set the chosen password, prove email ownership and
      * activate the account. Returns false when the link is invalid or expired.
+     *
+     * A failure takes the same time whether or not the email address has an
+     * invitation: only then would the token be hashed and checked.
      */
-    public function activate(string $email, string $token, string $password): bool
+    public function activate(string $email, #[\SensitiveParameter] string $token, #[\SensitiveParameter] string $password): bool
     {
-        $user = User::query()
-            ->where('email', User::normaliseEmail($email))
-            ->where('status', AccountStatus::Pending)
-            ->first();
+        return (new Timebox)->call(function (Timebox $timebox) use ($email, $token, $password): bool {
+            $user = User::findByEmail($email);
+            $user = $user?->isPending() ? $user : null;
 
-        $broker = $this->invitationBroker();
+            $broker = $this->invitationBroker();
 
-        $activated = $user !== null
-            && $broker->tokenExists($user, $token)
-            && DB::transaction(function () use ($user, $password, $broker): bool {
-                if (! $this->claimPendingAccount($user, $password)) {
-                    return false;
-                }
+            $activated = $user !== null
+                && $broker->tokenExists($user, $token)
+                && DB::transaction(function () use ($user, $password, $broker): bool {
+                    if (! $this->claimPendingAccount($user, $password)) {
+                        return false;
+                    }
 
-                $broker->deleteToken($user);
+                    $broker->deleteToken($user);
 
-                return true;
-            });
+                    return true;
+                });
 
-        if (! $activated) {
-            $this->audit->record('account.activation.failed', AuditOutcome::Failure, $user);
+            if (! $activated) {
+                $this->audit->record('account.activation.failed', AuditOutcome::Failure, $user);
 
-            return false;
-        }
+                return false;
+            }
 
-        $this->audit->record('account.activated', AuditOutcome::Success, $user);
+            $this->audit->record('account.activated', AuditOutcome::Success, $user);
 
-        return true;
+            $timebox->returnEarly();
+
+            return true;
+        }, self::MINIMUM_ACTIVATION_DURATION);
     }
 
     public function suspend(User $user, string $reason, ?User $actor = null): void
@@ -113,6 +133,9 @@ class AccountLifecycle
         // being reactivated before a session makes another request.
         $revoked = DB::transaction(function () use ($user, $reason): int {
             $user->forceFill([
+                'status_before_suspension' => $user->status === AccountStatus::Suspended
+                    ? $user->status_before_suspension
+                    : $user->status->value,
                 'status' => AccountStatus::Suspended,
                 'suspended_at' => now(),
                 'suspension_reason' => $reason,
@@ -130,16 +153,25 @@ class AccountLifecycle
     }
 
     /**
-     * Lift a suspension. An account suspended before its owner activated it
-     * returns to Pending, so the owner must still prove they control the
-     * email address through the activation link.
+     * Lift a suspension, returning the account to the status it had. So an
+     * account suspended before its owner activated it returns to Pending,
+     * and the owner must still prove they control the email address through
+     * the activation link; an account in use stays in use, even if its email
+     * address was never verified (accounts that predate activation).
      */
     public function reactivate(User $user, ?User $actor = null): AccountStatus
     {
-        $status = $user->email_verified_at === null ? AccountStatus::Pending : AccountStatus::Active;
+        $previous = AccountStatus::tryFrom((string) $user->status_before_suspension);
+
+        $status = match (true) {
+            in_array($previous, [AccountStatus::Active, AccountStatus::Pending], true) => $previous,
+            $user->email_verified_at === null => AccountStatus::Pending,
+            default => AccountStatus::Active,
+        };
 
         $user->forceFill([
             'status' => $status,
+            'status_before_suspension' => null,
             'suspended_at' => null,
             'suspension_reason' => null,
         ])->save();

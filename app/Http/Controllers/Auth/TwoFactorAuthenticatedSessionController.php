@@ -32,7 +32,9 @@ class TwoFactorAuthenticatedSessionController extends FortifyTwoFactorAuthentica
     {
         $user = $request->challengedUser();
 
-        $checkedField = $request->filled('code') ? 'code' : 'recovery_code';
+        // The form sends only the field in use, so a blank one still gets its
+        // error next to it.
+        $checkedField = $request->filled('code') || ! $request->has('recovery_code') ? 'code' : 'recovery_code';
 
         $passed = $checkedField === 'code'
             ? $request->hasValidCode()

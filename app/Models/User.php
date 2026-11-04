@@ -70,6 +70,25 @@ class User extends Authenticatable
     }
 
     /**
+     * The account with exactly this email address, or null. Two things must
+     * not reach an account: text a database collation only treats as equal
+     * (invisible characters, accents), which would get around limits keyed
+     * on what was typed, and bytes that are not text, which Postgres and
+     * strict MySQL refuse with an error.
+     */
+    public static function findByEmail(string $email): ?self
+    {
+        if (! mb_check_encoding($email, 'UTF-8')) {
+            return null;
+        }
+
+        $email = self::normaliseEmail($email);
+        $user = self::query()->where('email', $email)->first();
+
+        return $user !== null && self::normaliseEmail($user->email) === $email ? $user : null;
+    }
+
+    /**
      * Use up a recovery code, atomically (SecondFactor::consumeRecoveryCode),
      * keeping Fortify's contract: a code that is not, or no longer, one of
      * the user's is refused. (The sign-in challenge uses the code up while

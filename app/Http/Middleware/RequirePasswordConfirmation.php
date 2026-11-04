@@ -15,11 +15,10 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Replaces the framework's `password.confirm` middleware.
  *
- * The framework remembers the URL that needed confirmation and sends the
- * browser back to it with GET afterwards. That fails for actions such as
- * DELETE /settings/security/sessions/{id}. For those, this middleware
- * remembers the page the action was taken from instead, so the user lands
- * back on it after confirming and can repeat the action.
+ * After confirming, the framework sends the browser back to the page an
+ * action (such as DELETE /settings/security/sessions/{id}) was taken from,
+ * taking that page from the Referer header as given. This middleware only
+ * returns to a page on this site.
  */
 class RequirePasswordConfirmation extends RequirePassword
 {
