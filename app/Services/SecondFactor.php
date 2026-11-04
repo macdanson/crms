@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
@@ -43,30 +42,22 @@ class SecondFactor
      */
     public function isValidCode(User $user, string $code): bool
     {
-        if ($user->two_factor_secret === null) {
-            return false;
-        }
+        // No secret, or one that cannot be read, matches no code.
+        $secret = $user->twoFactorSecret();
 
-        // A secret that cannot be decrypted (for example after a key change)
-        // matches no code; it is reported, not an error for the user.
-        try {
-            $secret = Fortify::currentEncrypter()->decrypt($user->two_factor_secret);
-        } catch (DecryptException $exception) {
-            report($exception);
-
-            return false;
-        }
-
-        return $this->provider->verify($secret, (string) preg_replace('/\s+/', '', $code));
+        return $secret !== null && $this->provider->verify($secret, (string) preg_replace('/\s+/', '', $code));
     }
 
     /**
-     * How many unused recovery codes the user has, read safely: codes that
-     * cannot be read count as none.
+     * The stored recovery codes value, read afresh, if it holds the code;
+     * otherwise null. An action can then change the codes only while they
+     * are still exactly this value (see AccountLifecycle::resetTwoFactor).
      */
-    public function remainingRecoveryCodes(User $user): int
+    public function storedCodesHolding(User $user, string $recoveryCode): ?string
     {
-        return count($this->storedCodes($user)['codes'] ?? []);
+        $stored = $this->storedCodes($user);
+
+        return $stored !== null && $this->matchingCode($stored['codes'], $recoveryCode) !== null ? $stored['encrypted'] : null;
     }
 
     /**
@@ -149,21 +140,9 @@ class SecondFactor
             return null;
         }
 
-        // Decoded as Fortify stores them. Fortify's recoveryCodes() is not used
-        // because it assumes a readable JSON list; a value that cannot be
-        // decrypted (for example after a key change) or is not a list counts
-        // as no codes, reported but not an error for the user.
-        try {
-            $codes = json_decode(Fortify::currentEncrypter()->decrypt($encrypted), true);
-        } catch (DecryptException $exception) {
-            report($exception);
-
-            return null;
-        }
-
         return [
             'encrypted' => $encrypted,
-            'codes' => is_array($codes) ? array_values(array_filter($codes, is_string(...))) : [],
+            'codes' => User::decodeRecoveryCodes($encrypted),
         ];
     }
 

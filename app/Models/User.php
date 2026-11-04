@@ -6,6 +6,7 @@ use App\Enums\AccountStatus;
 use App\Notifications\ResetPasswordLink;
 use App\Services\SecondFactor;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,6 +16,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Laravel\Fortify\Fortify;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -160,6 +162,61 @@ class User extends Authenticatable
      */
     public function remainingRecoveryCodeCount(): int
     {
-        return $this->hasEnabledTwoFactorAuthentication() ? app(SecondFactor::class)->remainingRecoveryCodes($this) : 0;
+        return $this->hasEnabledTwoFactorAuthentication() ? count($this->recoveryCodes()) : 0;
+    }
+
+    /**
+     * The unused recovery codes. Unlike Fortify's version, codes that cannot
+     * be read (for example after an app key change) count as none, so no
+     * page that shows them fails.
+     *
+     * @return list<string>
+     */
+    public function recoveryCodes(): array
+    {
+        return self::decodeRecoveryCodes($this->two_factor_recovery_codes);
+    }
+
+    /**
+     * The authenticator secret, or null when there is none or it cannot be
+     * read (for example after an app key change). A failure is reported.
+     */
+    public function twoFactorSecret(): ?string
+    {
+        if ($this->two_factor_secret === null) {
+            return null;
+        }
+
+        try {
+            return Fortify::currentEncrypter()->decrypt($this->two_factor_secret);
+        } catch (DecryptException $exception) {
+            report($exception);
+
+            return null;
+        }
+    }
+
+    /**
+     * Decode a stored recovery codes value as Fortify writes it (encrypted
+     * JSON list). Anything unreadable is no codes; a failure to decrypt is
+     * reported.
+     *
+     * @return list<string>
+     */
+    public static function decodeRecoveryCodes(?string $encrypted): array
+    {
+        if ($encrypted === null) {
+            return [];
+        }
+
+        try {
+            $codes = json_decode(Fortify::currentEncrypter()->decrypt($encrypted), true);
+        } catch (DecryptException $exception) {
+            report($exception);
+
+            return [];
+        }
+
+        return is_array($codes) ? array_values(array_filter($codes, is_string(...))) : [];
     }
 }

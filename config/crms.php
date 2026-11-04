@@ -35,7 +35,7 @@ return [
     | absolute_warning:         Seconds of warning shown before that maximum is reached.
     | notify_new_device:        Email users when a new device signs in.
     | challenge_timeout:        Minutes allowed between the password and the
-    |                           code steps of signing in.
+    |                           code steps of signing in (0 = no limit).
     |
     */
 

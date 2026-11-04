@@ -159,24 +159,38 @@ class AccountLifecycle
      */
     public function resetTwoFactor(User $user, ?User $actor = null, ?Session $keepSession = null, ?string $proof = null, ?string $recoveryCode = null): void
     {
+        // A recovery code given as proof: the codes are cleared only while
+        // they are still the stored value that held it, so a parallel request
+        // cannot use the same code, and a reset that fails costs no code.
+        $codesHoldingProof = $recoveryCode === null ? null : app(SecondFactor::class)->storedCodesHolding($user, $recoveryCode);
+
+        if ($recoveryCode !== null && $codesHoldingProof === null) {
+            throw ValidationException::withMessages(['recovery_code' => 'That recovery code is not valid.']);
+        }
+
         // One transaction: no other session may see the account without an
         // authenticator before it has been signed out, or it could enrol one.
-        // A recovery code given as proof is used up in the same transaction,
-        // so a parallel request cannot use it too, and a reset that fails
-        // does not cost the user the code.
-        $revoked = DB::transaction(function () use ($user, $keepSession, $recoveryCode): int {
-            if ($recoveryCode !== null && ! app(SecondFactor::class)->consumeRecoveryCode($user, $recoveryCode)) {
-                throw ValidationException::withMessages(['recovery_code' => 'That recovery code is not valid.']);
+        $revoked = DB::transaction(function () use ($user, $keepSession, $codesHoldingProof): int {
+            $cleared = User::query()
+                ->whereKey($user->getKey())
+                ->when($codesHoldingProof !== null, fn ($query) => $query->where('two_factor_recovery_codes', $codesHoldingProof))
+                ->update([
+                    'two_factor_secret' => null,
+                    'two_factor_recovery_codes' => null,
+                    'two_factor_confirmed_at' => null,
+                    // Invalidate any "remember me" cookie, which would otherwise let
+                    // its holder sign back in and enrol their own authenticator.
+                    'remember_token' => Str::random(60),
+                    'updated_at' => now(),
+                ]);
+
+            if ($cleared !== 1) {
+                throw ValidationException::withMessages([
+                    'recovery_code' => 'Your recovery codes changed while this code was being checked. Please try again.',
+                ]);
             }
 
-            $user->forceFill([
-                'two_factor_secret' => null,
-                'two_factor_recovery_codes' => null,
-                'two_factor_confirmed_at' => null,
-                // Invalidate any "remember me" cookie, which would otherwise let
-                // its holder sign back in and enrol their own authenticator.
-                'remember_token' => Str::random(60),
-            ])->save();
+            $user->refresh();
 
             return $this->policy->endOtherSessions($user, $keepSession);
         });

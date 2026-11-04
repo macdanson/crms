@@ -43,14 +43,19 @@ class TwoFactorSetupController extends Controller
         // two pages loading at once from each saving a different secret.
         Cache::lock('crms.two-factor-setup.'.$user->getKey(), 10)->block(5, function () use ($user, $enable): void {
             $user->refresh();
-            $enable($user);
+
+            // A secret that can no longer be read (for example after an app
+            // key change) is replaced; nothing can be confirmed with it.
+            $unreadable = $user->two_factor_secret !== null && $user->twoFactorSecret() === null;
+
+            $enable($user, $unreadable);
         });
         $user->refresh();
 
         return Inertia::render('auth/TwoFactorSetup', [
             'step' => 'scan',
             'qrCodeSvg' => $user->twoFactorQrCodeSvg(),
-            'setupKey' => Fortify::currentEncrypter()->decrypt($user->two_factor_secret),
+            'setupKey' => $user->twoFactorSecret(),
             'recoveryCodes' => [],
         ]);
     }

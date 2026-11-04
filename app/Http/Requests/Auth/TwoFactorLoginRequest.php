@@ -28,6 +28,11 @@ use Laravel\Fortify\Http\Requests\TwoFactorLoginRequest as FortifyTwoFactorLogin
 class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
 {
     /**
+     * Shown when a challenge has expired or the password changed meanwhile.
+     */
+    private const CHALLENGE_ENDED = 'Your sign-in took too long or your password has changed. Please sign in again.';
+
+    /**
      * Get the user that is attempting the two-factor challenge.
      *
      * @throws ValidationException
@@ -61,7 +66,7 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             app(AuditLogger::class)->record('auth.challenge.expired', AuditOutcome::Blocked, $user);
 
             throw ValidationException::withMessages([
-                'email' => 'Your sign-in took too long or your password has changed. Please sign in again.',
+                'email' => self::CHALLENGE_ENDED,
             ])->redirectTo(route('login'));
         }
 
@@ -74,13 +79,28 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
      */
     public function hasChallengedUser(): bool
     {
-        if (! parent::hasChallengedUser()) {
+        if ($this->challengedUser instanceof User) {
+            return true;
+        }
+
+        $user = $this->session()->has('login.id') ? User::query()->find($this->session()->get('login.id')) : null;
+
+        if (! $user instanceof User) {
             return false;
         }
 
-        $user = User::query()->find($this->session()->get('login.id'));
+        $policy = app(SessionPolicy::class);
 
-        return $user instanceof User && app(SessionPolicy::class)->challengeIsCurrent($this->session(), $user);
+        if (! $policy->challengeIsCurrent($this->session(), $user)) {
+            $policy->endChallenge($this->session());
+            $this->session()->flash('error', self::CHALLENGE_ENDED);
+
+            return false;
+        }
+
+        $this->challengedUser = $user;
+
+        return true;
     }
 
     /**
@@ -101,7 +121,7 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             return null;
         }
 
-        $this->session()->forget('login.id');
+        app(SessionPolicy::class)->endChallenge($this->session());
 
         return trim($recoveryCode);
     }
@@ -122,7 +142,7 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             return false;
         }
 
-        $this->session()->forget('login.id');
+        app(SessionPolicy::class)->endChallenge($this->session());
 
         return true;
     }

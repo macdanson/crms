@@ -59,7 +59,8 @@ class SessionPolicy
     }
 
     /**
-     * Whether the code step may still be completed: it began recently, and no
+     * Whether the code step may still be completed: it began recently (a
+     * challenge timeout of 0 means no limit), and no
      * password change or reset (which rotates the session stamp) has
      * happened since the password was given.
      */
@@ -73,7 +74,7 @@ class SessionPolicy
 
         $timeout = (int) config('crms.auth.challenge_timeout') * 60;
 
-        return now()->getTimestamp() - $challenge['started_at'] < $timeout
+        return ($timeout === 0 || now()->getTimestamp() - $challenge['started_at'] < $timeout)
             && $user->session_stamp !== null
             && hash_equals($user->session_stamp, $challenge['stamp']);
     }

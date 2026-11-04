@@ -631,12 +631,25 @@ it('ends a code challenge that was left unfinished for too long', function () {
     startTwoFactorLogin($user);
     $this->travel(config('crms.auth.challenge_timeout') + 1)->minutes();
 
-    $this->get(route('two-factor.login'))->assertRedirect(route('login'));
-
     $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
-        ->assertRedirect(route('login'));
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('email');
 
     $this->assertGuest();
+});
+
+it('explains, and ends the challenge, when an expired code page is opened', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+    $this->travel(config('crms.auth.challenge_timeout') + 1)->minutes();
+
+    $this->get(route('two-factor.login'))
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('error', 'Your sign-in took too long or your password has changed. Please sign in again.');
+
+    expect(session()->has('login.id'))->toBeFalse()
+        ->and(session()->has(SessionPolicy::CHALLENGE))->toBeFalse();
 });
 
 it('does not let a linked authenticator be confirmed again', function () {
@@ -688,4 +701,91 @@ it('refuses to replace the authenticator with a recovery code another request ha
 
     expect($usedElsewhere)->toBeTrue()
         ->and($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeTrue();
+});
+
+it('sends at most one lock alert per quarter hour to someone guessing at the allowed rate', function () {
+    Notification::fake();
+    $user = User::factory()->withTwoFactor()->create();
+
+    startAttemptWindow();
+    lockSignInCodes($user, AccountAttemptLimiter::MAX_ATTEMPTS);
+
+    // Then one wrong code each time one is allowed again, for half an hour.
+    foreach (range(1, 10) as $guess) {
+        $this->travel(181)->seconds();
+        startTwoFactorLogin($user);
+        $this->post(route('two-factor.login.store'), ['code' => '000000']);
+    }
+
+    expect(Notification::sent($user, SignInCodesLocked::class)->count())->toBeGreaterThanOrEqual(1)->toBeLessThanOrEqual(3);
+});
+
+it('never ends a code challenge for its age when the challenge timeout is 0', function () {
+    config(['crms.auth.challenge_timeout' => 0]);
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+    $this->travel(2)->hours();
+
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('dashboard'));
+});
+
+it('removes every trace of the code challenge once signed in', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+    $this->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('dashboard'));
+
+    expect(session()->has(SessionPolicy::CHALLENGE))->toBeFalse()
+        ->and(session()->has('login.id'))->toBeFalse();
+});
+
+it('gives a half-finished enrolment a new secret when the old one cannot be read', function () {
+    $user = User::factory()->create(['two_factor_secret' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())
+        ->get(route('two-factor.setup'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'scan')->whereType('setupKey', 'string'));
+
+    expect($user->fresh()->twoFactorSecret())->not->toBeNull();
+});
+
+it('lists no recovery codes, rather than failing, when they cannot be read', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())
+        ->withSession(['auth.password_confirmed_at' => time(), SecondFactor::CONFIRMED_AT => time()])
+        ->getJson(route('two-factor.recovery-codes'))
+        ->assertOk()
+        ->assertExactJson([]);
+});
+
+it('replaces the authenticator with a recovery code without making a replacement code', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => $user->recoveryCodes()[0]])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect(AuditEvent::where('event', 'mfa.recovery_code.used')->exists())->toBeFalse()
+        ->and(AuditEvent::where('event', 'mfa.reset')->sole()->context)->toMatchArray(['proof' => 'recovery_code']);
+});
+
+it('counts the remaining recovery codes without reading them from the database again', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $reads = 0;
+
+    DB::listen(function (QueryExecuted $query) use (&$reads): void {
+        if (readsRecoveryCodes($query)) {
+            $reads++;
+        }
+    });
+
+    expect($user->remainingRecoveryCodeCount())->toBe(8)
+        ->and($reads)->toBe(0);
 });

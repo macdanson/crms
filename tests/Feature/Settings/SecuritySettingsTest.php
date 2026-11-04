@@ -517,3 +517,19 @@ it('rejects a password longer than the 72 bytes the hash uses', function () {
         ])
         ->assertSessionHasErrors('password');
 });
+
+it('gives one error, not two, for a password that is too long', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $tooLong = 'Aa1!'.str_repeat('x', 70); // 74 characters and bytes
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => $tooLong,
+            'password_confirmation' => $tooLong,
+        ])
+        ->assertSessionHasErrors('password');
+
+    expect(session('errors')->get('password'))->toHaveCount(1);
+});

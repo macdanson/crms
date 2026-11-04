@@ -45,9 +45,9 @@ class AccountAttemptLimiter
      *
      * @param  string  $secret  What is being guessed, e.g. "password".
      * @param  Closure(): bool  $check
-     * @param  (Closure(): void)|null  $onLock  Run once per lock, as soon as the
-     *                                          limit is reached: by the last wrong guess allowed, or at
-     *                                          the latest by the first guess refused.
+     * @param  (Closure(): void)|null  $onLock  Run as soon as the limit is reached (by
+     *                                          the last wrong guess allowed, or at the latest by the
+     *                                          first guess refused), at most once per DECAY_SECONDS.
      */
     public function attempt(string $secret, User $user, Closure $check, ?Closure $onLock = null): AttemptResult
     {
@@ -168,19 +168,15 @@ class AccountAttemptLimiter
     }
 
     /**
-     * Run $onLock once for this lock (until guesses are allowed again).
+     * Run $onLock at most once per DECAY_SECONDS. Someone guessing at the
+     * allowed rate reaches the limit again every few minutes; that is still
+     * one continuing lock, not a new one each time.
      *
      * @param  (Closure(): void)|null  $onLock
      */
     private function reachedLimit(string $secret, User $user, ?Closure $onLock): void
     {
-        if ($onLock === null) {
-            return;
-        }
-
-        $lockLasts = max(1, $this->unlocksAt($secret, $user)->getTimestamp() - now()->getTimestamp());
-
-        if (Cache::add("{$secret}-check:{$user->getKey()}:locked", true, $lockLasts)) {
+        if ($onLock !== null && Cache::add("{$secret}-check:{$user->getKey()}:locked", true, self::DECAY_SECONDS)) {
             $onLock();
         }
     }
