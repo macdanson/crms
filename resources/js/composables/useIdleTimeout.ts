@@ -1,0 +1,339 @@
+import { router, useHttp, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { logout } from '@/routes';
+import { heartbeat } from '@/routes/session';
+
+/**
+ * Browser half of the session timeout policy (developer guide §16).
+ *
+ * The server is the authority: EnforceSessionTimeouts signs the user out
+ * once no request has arrived for the idle window, or once the session reaches
+ * its maximum length. This composable keeps the server informed while the
+ * user is actively working on a page that makes no requests, warns before
+ * either sign-out, and keeps open tabs in sync.
+ */
+/**
+ * How long to wait before retrying a heartbeat that failed for a temporary
+ * reason (network blip, throttling, server error).
+ */
+const HEARTBEAT_RETRY_DELAY_MS = 30_000;
+
+/**
+ * A heartbeat tells the server the user is working, which restarts its idle
+ * clock from that moment, so the user must really have been active just now.
+ */
+const HEARTBEAT_ACTIVITY_WINDOW_MS = 60_000;
+
+/**
+ * How long to wait before asking the server again whether a session that
+ * looks over has ended, when the last check did not leave this page (offline,
+ * or the session is still alive).
+ */
+const EXPIRY_RETRY_DELAY_MS = 30_000;
+
+/**
+ * Responses meaning the server-side session has really ended.
+ */
+const SESSION_ENDED_STATUSES = [401, 419];
+
+export function useIdleTimeout() {
+    const page = usePage();
+    const http = useHttp({});
+
+    const idleTimeout = computed(() => page.props.session?.idle_timeout ?? 0);
+    const warningWindow = computed(() =>
+        Math.min(page.props.session?.idle_warning ?? 60, idleTimeout.value),
+    );
+
+    const absoluteWarningWindow = computed(
+        () => page.props.session?.absolute_warning ?? 300,
+    );
+
+    const showWarning = ref(false);
+    const secondsRemaining = ref(0);
+    const warningReason = ref<'idle' | 'absolute'>('idle');
+
+    // Browser time at which the session reaches its maximum length.
+    let absoluteDeadline: number | null = null;
+    let absoluteWarningDismissed = false;
+
+    watch(
+        () => page.props.session?.absolute_remaining,
+        (remaining) => {
+            if (typeof remaining !== 'number') {
+                absoluteDeadline = null;
+
+                return;
+            }
+
+            // A session's maximum length never moves later. A larger value
+            // only means Back restored an older page's props.
+            const deadline = Date.now() + remaining * 1000;
+
+            absoluteDeadline =
+                absoluteDeadline === null
+                    ? deadline
+                    : Math.min(absoluteDeadline, deadline);
+        },
+        { immediate: true },
+    );
+
+    let lastServerContact = Date.now();
+    let lastUserActivity = Date.now();
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    let channel: BroadcastChannel | undefined;
+    let removeServerContactListeners: (() => void) | undefined;
+    let expiring = false;
+    let nextExpiryCheckAt = 0;
+    let heartbeatInFlight = false;
+    let nextHeartbeatAllowedAt = 0;
+    // The user asked to stay signed in while a heartbeat was already in flight.
+    let heartbeatRequested = false;
+
+    const activityEvents = [
+        'pointerdown',
+        'keydown',
+        'wheel',
+        'touchstart',
+        'mousemove',
+    ] as const;
+
+    function recordServerContact(at = Date.now(), broadcast = true): void {
+        lastServerContact = Math.max(lastServerContact, at);
+
+        if (broadcast) {
+            channel?.postMessage({ type: 'contact', at: lastServerContact });
+        }
+    }
+
+    function recordUserActivity(): void {
+        lastUserActivity = Date.now();
+    }
+
+    function canSendHeartbeat(): boolean {
+        return !heartbeatInFlight && Date.now() >= nextHeartbeatAllowedAt;
+    }
+
+    /**
+     * Tell the server the user is still working. An explicit request from the
+     * user (`requestedByUser`) skips the retry wait after a failure, and is
+     * sent as soon as a heartbeat already in flight finishes.
+     */
+    async function sendHeartbeat(requestedByUser = false): Promise<void> {
+        if (heartbeatInFlight) {
+            heartbeatRequested ||= requestedByUser;
+
+            return;
+        }
+
+        if (!requestedByUser && !canSendHeartbeat()) {
+            return;
+        }
+
+        heartbeatInFlight = true;
+
+        try {
+            await http.post(heartbeat.url());
+            recordServerContact();
+        } catch (error) {
+            const status = (error as { response?: { status?: number } })
+                ?.response?.status;
+
+            if (
+                status !== undefined &&
+                SESSION_ENDED_STATUSES.includes(status)
+            ) {
+                expire(true);
+
+                return;
+            }
+
+            // The session is still valid; a temporary failure must not cost
+            // the user their unsaved work. Try again shortly.
+            nextHeartbeatAllowedAt = Date.now() + HEARTBEAT_RETRY_DELAY_MS;
+        } finally {
+            heartbeatInFlight = false;
+
+            if (heartbeatRequested && !expiring) {
+                heartbeatRequested = false;
+                void sendHeartbeat(true);
+            }
+        }
+    }
+
+    function staySignedIn(): void {
+        showWarning.value = false;
+        void sendHeartbeat(true);
+    }
+
+    /** Hide the maximum-length warning; it does not come back. */
+    function continueWorking(): void {
+        absoluteWarningDismissed = true;
+        showWarning.value = false;
+    }
+
+    function warn(reason: 'idle' | 'absolute', seconds: number): void {
+        warningReason.value = reason;
+        secondsRemaining.value = seconds;
+        showWarning.value = true;
+    }
+
+    function signOutNow(): void {
+        expiring = true;
+        router.post(
+            logout.url(),
+            {},
+            {
+                // A sign-out that failed (offline) must not stop the timer.
+                onFinish: () => {
+                    expiring = false;
+                },
+            },
+        );
+    }
+
+    /**
+     * Visit this page again. If the session has ended, the server records it
+     * and redirects to the sign-in page. If it is still alive (this tab's
+     * clock was behind), the user stays where they were and the timer starts
+     * again.
+     *
+     * Not router.reload(): that is an async visit, and Inertia ignores an
+     * asset version change on those, so after a deployment the redirect to
+     * the sign-in page would never be followed.
+     */
+    function expire(knownToHaveEnded = false): void {
+        if (expiring || (!knownToHaveEnded && Date.now() < nextExpiryCheckAt)) {
+            return;
+        }
+
+        expiring = true;
+        showWarning.value = false;
+        router.visit(window.location.href, {
+            preserveScroll: true,
+            preserveState: true,
+            onFinish: () => {
+                expiring = false;
+                nextExpiryCheckAt = Date.now() + EXPIRY_RETRY_DELAY_MS;
+            },
+        });
+    }
+
+    function tick(): void {
+        if (expiring) {
+            return;
+        }
+
+        const now = Date.now();
+        const absoluteLeft =
+            absoluteDeadline === null
+                ? null
+                : Math.ceil((absoluteDeadline - now) / 1000);
+
+        if (absoluteLeft !== null && absoluteLeft <= 0) {
+            expire();
+
+            return;
+        }
+
+        let idleLeft: number | null = null;
+
+        if (idleTimeout.value > 0) {
+            const sinceContact = (now - lastServerContact) / 1000;
+            const idleWarningShown =
+                showWarning.value && warningReason.value === 'idle';
+
+            idleLeft = Math.ceil(idleTimeout.value - sinceContact);
+
+            // Checked before any heartbeat: after a long sleep the session
+            // has already ended, and reloading shows the user why.
+            if (idleLeft <= 0) {
+                expire();
+
+                return;
+            }
+
+            // User is active but quiet: refresh the server well before expiry.
+            if (
+                lastUserActivity > lastServerContact &&
+                now - lastUserActivity < HEARTBEAT_ACTIVITY_WINDOW_MS &&
+                sinceContact >= idleTimeout.value / 3 &&
+                !idleWarningShown &&
+                canSendHeartbeat()
+            ) {
+                void sendHeartbeat();
+
+                return;
+            }
+        }
+
+        if (
+            absoluteLeft !== null &&
+            absoluteLeft <= absoluteWarningWindow.value &&
+            !absoluteWarningDismissed
+        ) {
+            warn('absolute', absoluteLeft);
+
+            return;
+        }
+
+        if (idleLeft !== null && idleLeft <= warningWindow.value) {
+            warn('idle', idleLeft);
+
+            return;
+        }
+
+        showWarning.value = false;
+    }
+
+    onMounted(() => {
+        activityEvents.forEach((event) =>
+            window.addEventListener(event, recordUserActivity, {
+                passive: true,
+            }),
+        );
+
+        // Only visits the server answered count: a visit that failed on the
+        // network or was cancelled never reset the server's idle clock.
+        const removeListeners = (
+            ['success', 'error', 'httpException', 'prefetched'] as const
+        ).map((event) => router.on(event, () => recordServerContact()));
+        removeServerContactListeners = () =>
+            removeListeners.forEach((remove) => remove());
+
+        if ('BroadcastChannel' in window) {
+            channel = new BroadcastChannel('crms-session');
+            channel.onmessage = (
+                event: MessageEvent<{ type: string; at: number }>,
+            ) => {
+                if (event.data?.type === 'contact') {
+                    recordServerContact(event.data.at, false);
+
+                    if (showWarning.value && warningReason.value === 'idle') {
+                        showWarning.value = false;
+                    }
+                }
+            };
+        }
+
+        ticker = setInterval(tick, 1000);
+    });
+
+    onBeforeUnmount(() => {
+        activityEvents.forEach((event) =>
+            window.removeEventListener(event, recordUserActivity),
+        );
+        removeServerContactListeners?.();
+        channel?.close();
+        clearInterval(ticker);
+    });
+
+    return {
+        showWarning,
+        secondsRemaining,
+        warningReason,
+        staySignedIn,
+        continueWorking,
+        signOutNow,
+    };
+}

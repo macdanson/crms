@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Fortify\Fortify;
+use PragmaRX\Google2FA\Google2FA;
 use Tests\TestCase;
 
 /*
@@ -44,7 +47,19 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Move the clock to just after the start of an attempt-limit window, so a
+ * test that moves time forward stays inside one window.
+ */
+function startAttemptWindow(): void
 {
-    // ..
+    test()->travelTo(now()->startOfDay()->addSecond());
+}
+
+/**
+ * The code the user's authenticator app shows right now.
+ */
+function currentAuthenticatorCode(User $user): string
+{
+    return app(Google2FA::class)->getCurrentOtp(Fortify::currentEncrypter()->decrypt($user->two_factor_secret));
 }

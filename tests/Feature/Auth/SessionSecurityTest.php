@@ -1,0 +1,481 @@
+<?php
+
+use App\Enums\AuditOutcome;
+use App\Models\AuditEvent;
+use App\Models\User;
+use App\Services\AccountLifecycle;
+use App\Services\AuditLogger;
+use App\Services\BrowserSessions;
+use App\Services\SessionPolicy;
+use Database\Factories\UserFactory;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\Store;
+use Illuminate\Session\TokenMismatchException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
+use Inertia\Testing\AssertableInertia;
+
+it('signs the user out after the idle timeout', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->get(route('dashboard'))
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('status', 'You were signed out after a period of inactivity.');
+
+    $this->assertGuest();
+    expect(AuditEvent::where('event', 'auth.session.expired')->sole()->context)->toBe(['reason' => 'idle_timeout']);
+});
+
+it('keeps an active user signed in when requests arrive within the idle window', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'));
+
+    foreach (range(1, 3) as $step) {
+        $this->travel(config('crms.auth.idle_timeout') - 1)->minutes();
+        $this->postJson(route('session.heartbeat'))->assertNoContent();
+    }
+
+    $this->get(route('dashboard'))->assertOk();
+});
+
+it('ends the session at the absolute lifetime even when the user is active', function () {
+    config(['crms.auth.absolute_lifetime' => 30]);
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'));
+
+    $elapsed = 0;
+    while ($elapsed < 30) {
+        $this->travel(10)->minutes();
+        $elapsed += 10;
+        $response = $this->get(route('dashboard'));
+    }
+
+    $response->assertRedirect(route('login'))
+        ->assertSessionHas('status', 'Your session reached its maximum length. Please sign in again.');
+});
+
+it('returns 401 from the heartbeat once the session has expired', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'));
+
+    $this->travel(config('crms.auth.idle_timeout') + 1)->minutes();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+});
+
+it('ends a suspended user’s existing session on their next request', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    app(AccountLifecycle::class)->suspend($user, 'Left the service');
+
+    $this->get(route('dashboard'))
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('status', 'Your session has ended because your account is no longer active.');
+
+    $this->assertGuest();
+    expect(AuditEvent::where('event', 'auth.session.terminated')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('deletes a suspended user’s stored sessions immediately', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'));
+    expect(DB::table('sessions')->where('user_id', $user->id)->count())->toBe(1);
+
+    app(AccountLifecycle::class)->suspend($user, 'Left the service');
+
+    expect(DB::table('sessions')->where('user_id', $user->id)->count())->toBe(0);
+});
+
+it('returns 401 JSON to the heartbeat of a suspended account', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $user->forceFill(['status' => 'suspended'])->save();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+});
+
+it('does not record a timed-out session as a sign-out by the user', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+    $this->get(route('dashboard'));
+
+    expect(AuditEvent::where('event', 'auth.session.expired')->exists())->toBeTrue()
+        ->and(AuditEvent::where('event', 'auth.logout')->exists())->toBeFalse();
+});
+
+it('does not record the end of a suspended user’s session as a sign-out by the user', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $user->forceFill(['status' => 'suspended'])->save();
+    $this->get(route('dashboard'));
+
+    expect(AuditEvent::where('event', 'auth.session.terminated')->exists())->toBeTrue()
+        ->and(AuditEvent::where('event', 'auth.logout')->exists())->toBeFalse();
+});
+
+it('sends an Inertia action made after the idle timeout to the sign-in page with GET', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->withHeader('X-Inertia', 'true')
+        ->delete(route('security.sessions.destroy-others'))
+        ->assertStatus(303)
+        ->assertRedirect(route('login'));
+});
+
+it('ends other sessions after an authenticator reset with any session driver', function () {
+    expect(config('session.driver'))->not->toBe('database');
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    app(AccountLifecycle::class)->resetTwoFactor($user);
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+    expect(AuditEvent::where('event', 'auth.session.invalidated')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('keeps the session of a user who replaces their own authenticator', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('two-factor.setup'));
+
+    $this->get(route('two-factor.setup'))->assertOk();
+    $this->assertAuthenticatedAs($user);
+});
+
+it('tells the page how long the session has before its maximum length', function () {
+    config(['crms.auth.absolute_lifetime' => 30]);
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(10)->minutes();
+
+    $this->get(route('dashboard'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('session.absolute_remaining', 20 * 60)
+            ->where('session.absolute_warning', config('crms.auth.absolute_warning')));
+});
+
+it('tells a user whose heartbeat finds the session ended why they were signed out', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+
+    $this->get(route('login'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('flash.status', 'You were signed out after a period of inactivity.'));
+});
+
+it('signs out a session that was never stamped at sign-in', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->flushSession();
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+});
+
+it('signs out a suspended user even if the account is reactivated first', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $lifecycle = app(AccountLifecycle::class);
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $lifecycle->suspend($user, 'Investigation');
+    $lifecycle->reactivate($user);
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+});
+
+it('shows the sign-out reason after the browser reloads a protected page', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+
+    $this->postJson(route('session.heartbeat'))->assertUnauthorized();
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+
+    $this->get(route('login'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('flash.status', 'You were signed out after a period of inactivity.'));
+});
+
+it('keeps the session that ended the others even if an earlier request saves the old stamp back', function () {
+    $user = User::factory()->create();
+    $policy = app(SessionPolicy::class);
+    $newSession = function (): Store {
+        $session = new Store('crms_test', new ArraySessionHandler(120));
+        $session->start();
+
+        return $session;
+    };
+
+    $keptSession = $newSession();
+    $otherSession = $newSession();
+    $policy->start($keptSession, $user);
+    $policy->start($otherSession, $user);
+    $stampBefore = $keptSession->get(SessionPolicy::STAMP);
+
+    $policy->endOtherSessions($user, $keptSession);
+
+    // A request the kept session had in flight saves the session it read
+    // before the change, with the old stamp.
+    $keptSession->put(SessionPolicy::STAMP, $stampBefore);
+
+    expect($policy->isCurrent($keptSession, $user->fresh()))->toBeTrue()
+        ->and($policy->isCurrent($otherSession, $user->fresh()))->toBeFalse();
+});
+
+it('sends a signed-in user back to try again after an expired form token', function () {
+    Route::post('_test/expired-token', fn () => throw new TokenMismatchException)->middleware('web');
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->from(route('dashboard'))
+        ->post('_test/expired-token')
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('error', 'This page had expired, so your last action was not saved. Please try again.');
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('sends a guest to sign in after an expired form token', function () {
+    Route::post('_test/expired-token', fn () => throw new TokenMismatchException)->middleware('web');
+
+    $this->post('_test/expired-token')
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('status', 'Your session expired. Please sign in again.');
+});
+
+/**
+ * Checks CSRF tokens in this test as in production (Laravel skips the check
+ * while running tests).
+ */
+function enforceCsrfTokens(): void
+{
+    app()->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app->make(Encrypter::class)) extends PreventRequestForgery
+    {
+        protected function runningUnitTests(): bool
+        {
+            return false;
+        }
+    });
+}
+
+it('sends a signed-in user back with GET after a stale token on an Inertia PUT', function () {
+    enforceCsrfTokens();
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->from(route('security.show'))
+        ->withHeader('X-Inertia', 'true')
+        ->put(route('user-password.update'), ['current_password' => 'x', 'password' => 'y', 'password_confirmation' => 'y'])
+        ->assertStatus(303)
+        ->assertRedirect(route('security.show'))
+        ->assertSessionHas('error', 'This page had expired, so your last action was not saved. Please try again.');
+});
+
+it('sends a guest to sign in after a stale token on an Inertia sign-in', function () {
+    enforceCsrfTokens();
+
+    $this->withHeader('X-Inertia', 'true')
+        ->post(route('login.store'), ['email' => 'someone@crms.test', 'password' => 'anything'])
+        // A POST: browsers follow a 302 with GET, so it needs no 303.
+        ->assertStatus(302)
+        ->assertRedirect(route('login'));
+});
+
+it('sends a signed-in user back with GET after a stale token on an Inertia DELETE', function () {
+    enforceCsrfTokens();
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->from(route('security.show'))
+        ->withHeader('X-Inertia', 'true')
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertStatus(303)
+        ->assertRedirect(route('security.show'));
+});
+
+it('sends an Inertia PUT made after a security change to the sign-in page with GET', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    app(SessionPolicy::class)->endOtherSessions($user);
+
+    $this->withHeader('X-Inertia', 'true')
+        ->put(route('user-password.update'), [])
+        ->assertStatus(303)
+        ->assertRedirect(route('login'));
+});
+
+/**
+ * Open the security page as a browser would, sending the session cookie (a
+ * test request otherwise gets a new session ID each time). Returns the ID.
+ */
+function browseWithSessionCookie(User $user): string
+{
+    test()->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+    test()->get(route('security.show'))->assertOk();
+
+    $sessionId = session()->getId();
+
+    test()->withCookie(session()->getName(), $sessionId);
+
+    return $sessionId;
+}
+
+/**
+ * The session the cookie held is gone, so a copy of the cookie is useless,
+ * and the user carries on under a new ID.
+ */
+function expectSessionMovedFrom(string $sessionId): void
+{
+    expect(session()->getId())->not->toBe($sessionId)
+        ->and(session()->getHandler()->read($sessionId))->toBe('')
+        ->and(session()->getHandler()->read(session()->getId()))->not->toBe('');
+}
+
+it('moves the session to a new ID when the password changes, so a copied cookie stops working', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = browseWithSessionCookie($user);
+
+    $this->put(route('user-password.update'), [
+        'current_password' => UserFactory::PASSWORD,
+        'password' => 'A-Brand-New-Pass-42',
+        'password_confirmation' => 'A-Brand-New-Pass-42',
+    ])->assertSessionHasNoErrors();
+
+    expectSessionMovedFrom($sessionId);
+});
+
+it('moves the session to a new ID when signing out other sessions', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = browseWithSessionCookie($user);
+
+    $this->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHasNoErrors();
+
+    expectSessionMovedFrom($sessionId);
+});
+
+it('moves the session to a new ID when the authenticator is replaced', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = browseWithSessionCookie($user);
+
+    $this->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expectSessionMovedFrom($sessionId);
+});
+
+it('leaves the session alone when the security change is rolled back', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $stamp = $user->session_stamp;
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $idBefore = session()->getId();
+
+    expect(fn () => DB::transaction(function () use ($user): void {
+        app(SessionPolicy::class)->endOtherSessions($user, session()->driver());
+
+        throw new RuntimeException('The change failed');
+    }))->toThrow(RuntimeException::class);
+
+    expect(session()->getId())->toBe($idBefore)
+        ->and(session(SessionPolicy::STAMP))->toBe($stamp)
+        ->and($user->fresh()->session_stamp)->toBe($stamp);
+});
+
+it('does not write the audit log line of a change that is rolled back', function () {
+    $user = User::factory()->create();
+    Log::spy();
+
+    expect(fn () => DB::transaction(function () use ($user): void {
+        app(AuditLogger::class)->record('mfa.disabled', AuditOutcome::Success, $user);
+
+        throw new RuntimeException('The change failed');
+    }))->toThrow(RuntimeException::class);
+
+    Log::shouldNotHaveReceived('channel');
+});
+
+it('encrypts the history, and clears it on the page after signing out', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $page = $this->actingAs($user)->get(route('dashboard'))->inertiaPage();
+
+    expect($page['encryptHistory'] ?? false)->toBeTrue()
+        ->and($page['clearHistory'] ?? false)->toBeFalse();
+
+    $this->post(route('logout'))->assertRedirect(route('login'));
+
+    expect($this->get(route('login'))->inertiaPage()['clearHistory'] ?? false)->toBeTrue();
+});
+
+it('clears the history on the page after a session times out', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->travel(config('crms.auth.idle_timeout'))->minutes();
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+
+    expect($this->get(route('login'))->inertiaPage()['clearHistory'] ?? false)->toBeTrue();
+});
+
+it('keeps separate request limits for separate routes', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)->withSession(['auth.password_confirmed_at' => time()]);
+
+    foreach (range(1, 6) as $heartbeat) {
+        $this->post(route('session.heartbeat'))->assertNoContent();
+    }
+
+    $this->post(route('security.second-factor.confirm'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect();
+});
+
+it('does not list a stored session that has ended', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+
+    DB::table('sessions')->insert([
+        'id' => 'ended-session-id',
+        'user_id' => $user->id,
+        'ip_address' => '10.20.30.40',
+        'user_agent' => 'Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36',
+        'payload' => base64_encode(serialize([])),
+        'last_activity' => now()->subMinutes((int) config('crms.auth.idle_timeout') + 1)->getTimestamp(),
+    ]);
+
+    expect(app(BrowserSessions::class)->forUser($user, 'current-session-id'))->toBeEmpty();
+});

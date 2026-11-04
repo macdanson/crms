@@ -1,11 +1,200 @@
+/*
+| Element Plus sits in its own cascade layer: above Tailwind's preflight so
+| components keep their look, below utilities so classes like text-emerald-600
+| can still adjust a component. Unlayered rules below (brand tokens) win over both.
+*/
+@layer theme, base, element-plus, components, utilities;
 @import 'tailwindcss';
+@import 'element-plus/dist/index.css' layer(element-plus);
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
-@theme inline {
+/*
+|--------------------------------------------------------------------------
+| CRMS brand tokens
+|--------------------------------------------------------------------------
+|
+| Deep Teal (brand: calm, analytical, trustworthy), Ink (dark surfaces and
+| text), Trace Amber (accent: the finding in the logo; highlights only) and
+| Signal Red (reserved for danger and destructive actions). See docs/brand.
+|
+*/
+
+@theme {
     --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
+        Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-mono:
+        'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+    --color-brand-50: #f3f8f9;
+    --color-brand-100: #e7eff1;
+    --color-brand-200: #cfdfe2;
+    --color-brand-300: #b7cfd4;
+    --color-brand-400: #87afb7;
+    --color-brand-500: #568e9a;
+    --color-brand-600: #0e5e6f;
+    --color-brand-700: #0b4b59;
+    --color-brand-800: #093d49;
+    --color-brand-900: #082f38;
+    --color-brand-950: #051e24;
+
+    --color-accent-100: #fdf1d6;
+    --color-accent-300: #f8cb66;
+    --color-accent-500: #f2a900;
+    --color-accent-700: #8a5d00;
+
+    --color-signal-500: #c8102e;
+    --color-signal-700: #a00d25;
+
+    --color-surface: #f4f7f8;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Element Plus theme
+|--------------------------------------------------------------------------
+|
+| Element Plus reads its palette from CSS variables. Each colour needs the
+| full light/dark scale or components fall back to the default blue.
+|
+*/
+
+:root {
+    --el-color-primary: #0e5e6f;
+    --el-color-primary-light-3: #568e9a;
+    --el-color-primary-light-5: #87afb7;
+    --el-color-primary-light-7: #b7cfd4;
+    --el-color-primary-light-8: #cfdfe2;
+    --el-color-primary-light-9: #e7eff1;
+    --el-color-primary-dark-2: #0b4b59;
+
+    --el-color-success: #1f7a4d;
+    --el-color-success-light-3: #62a282;
+    --el-color-success-light-5: #8fbda6;
+    --el-color-success-light-7: #bcd7ca;
+    --el-color-success-light-8: #d2e4db;
+    --el-color-success-light-9: #e9f2ed;
+    --el-color-success-dark-2: #19623e;
+
+    --el-color-warning: #a86400;
+    --el-color-warning-light-3: #c2934d;
+    --el-color-warning-light-5: #d4b280;
+    --el-color-warning-light-7: #e5d1b3;
+    --el-color-warning-light-8: #eee0cc;
+    --el-color-warning-light-9: #f6f0e6;
+    --el-color-warning-dark-2: #865000;
+
+    --el-color-danger: #c8102e;
+    --el-color-danger-light-3: #d9586d;
+    --el-color-danger-light-5: #e48897;
+    --el-color-danger-light-7: #efb7c0;
+    --el-color-danger-light-8: #f4cfd5;
+    --el-color-danger-light-9: #fae7ea;
+    --el-color-danger-dark-2: #a00d25;
+
+    --el-color-error: #c8102e;
+    --el-color-error-light-3: #d9586d;
+    --el-color-error-light-5: #e48897;
+    --el-color-error-light-7: #efb7c0;
+    --el-color-error-light-8: #f4cfd5;
+    --el-color-error-light-9: #fae7ea;
+    --el-color-error-dark-2: #a00d25;
+
+    --el-color-info: #5b6578;
+    --el-color-info-light-3: #8c93a1;
+    --el-color-info-light-5: #adb2bc;
+    --el-color-info-light-7: #ced1d7;
+    --el-color-info-light-8: #dee0e4;
+    --el-color-info-light-9: #eff0f2;
+    --el-color-info-dark-2: #495160;
+
+    --el-text-color-primary: #0f172a;
+    --el-text-color-regular: #334155;
+    --el-text-color-secondary: #64748b;
+    --el-border-color: #d6dbe5;
+    --el-border-color-light: #e2e6ee;
+    --el-border-color-lighter: #ebeef4;
+    --el-bg-color-page: #f4f7f8;
+
+    --el-font-family: var(--font-sans);
+    --el-border-radius-base: 6px;
+    --el-border-radius-small: 4px;
+    --el-border-radius-round: 20px;
+    --el-component-size-large: 44px;
+    --el-component-size: 36px;
+}
+
+@layer base {
+    html,
+    body {
+        @apply bg-surface text-slate-900;
+    }
+
+    body {
+        font-feature-settings: 'cv11', 'ss01';
+    }
+
+    ::selection {
+        @apply bg-brand-200 text-brand-900;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-accent-500);
+        outline-offset: 2px;
+    }
+}
+
+@layer components {
+    /* Case references, identifiers, codes: always monospaced and tabular. */
+    .crms-code {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+    }
+
+    /* Dark brand backdrop with a faint data grid, used on hero panels. */
+    .crms-pattern {
+        background-color: var(--color-brand-900);
+        background-image:
+            radial-gradient(
+                circle at 20% 20%,
+                rgb(14 94 111 / 0.6),
+                transparent 55%
+            ),
+            radial-gradient(
+                circle at 85% 90%,
+                rgb(242 169 0 / 0.12),
+                transparent 45%
+            ),
+            radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1.5px);
+        background-size:
+            100% 100%,
+            100% 100%,
+            22px 22px;
+    }
+}
+
+/* Element Plus refinements. */
+.el-button {
+    font-weight: 600;
+}
+
+.el-form-item__label {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+}
+
+.el-card {
+    --el-card-border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
 }

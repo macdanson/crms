@@ -24,6 +24,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | History
+    |--------------------------------------------------------------------------
+    |
+    | Encrypt the props kept in the browser's history, so clearing the history
+    | at sign-out (HandleInertiaRequests) makes them unreadable. This needs a
+    | secure context (HTTPS or localhost); elsewhere the browser stores them
+    | unencrypted and Inertia logs a warning.
+    |
+    */
+
+    'history' => [
+        'encrypt' => true,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Pages
     |--------------------------------------------------------------------------
     |

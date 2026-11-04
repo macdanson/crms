@@ -37,14 +37,19 @@ class AppServiceProvider extends ServiceProvider
             app()->isProduction(),
         );
 
-        Password::defaults(fn (): ?Password => app()->isProduction()
-            ? Password::min(12)
-                ->mixedCase()
+        // One password policy for every environment (developer guide §6.1, §23).
+        // Breached-password screening calls an external k-anonymity API, so it
+        // is limited to production where outbound access is approved.
+        Password::defaults(function (): Password {
+            // The upper limit is in bytes (bcrypt uses only the first 72); see
+            // PasswordValidationRules::fitsPasswordHash().
+            $rule = Password::min(12)
                 ->letters()
+                ->mixedCase()
                 ->numbers()
-                ->symbols()
-                ->uncompromised()
-            : null,
-        );
+                ->symbols();
+
+            return app()->isProduction() ? $rule->uncompromised() : $rule;
+        });
     }
 }

@@ -1,0 +1,655 @@
+<?php
+
+use App\Actions\Fortify\PasswordValidationRules;
+use App\Enums\AttemptResult;
+use App\Models\AuditEvent;
+use App\Models\User;
+use App\Services\AccountAttemptLimiter;
+use App\Services\BrowserSessions;
+use App\Services\SessionPolicy;
+use Database\Factories\UserFactory;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
+use Inertia\Testing\AssertableInertia;
+
+/**
+ * Inserts a stored session for the user as if signed in on another device.
+ */
+function storeOtherSession(User $user, string $id = 'other-device-session-id'): string
+{
+    DB::table('sessions')->insert([
+        'id' => $id,
+        'user_id' => $user->id,
+        'ip_address' => '10.20.30.40',
+        'user_agent' => 'Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36',
+        'payload' => base64_encode(serialize([])),
+        'last_activity' => now()->getTimestamp(),
+    ]);
+
+    return $id;
+}
+
+it('asks for the password again before showing security settings', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->get(route('security.show'))
+        ->assertRedirect(route('password.confirm'));
+});
+
+it('shows the user their account, authenticator and activity', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    AuditEvent::create([
+        'occurred_at' => now(),
+        'user_id' => $user->id,
+        'event' => 'auth.login',
+        'outcome' => 'success',
+        'user_agent' => 'Mozilla/5.0 (Windows NT 10.0) Chrome/130.0',
+    ]);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('security.show'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('settings/Security')
+            ->where('account.email', $user->email)
+            ->where('twoFactor.enabled', true)
+            ->where('twoFactor.recovery_codes_remaining', 8)
+            ->where('activity.0.event', 'auth.login')
+            ->where('activity.0.device', 'Chrome on Windows'));
+});
+
+it('never sends the authenticator secret or recovery codes in shared page data', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $response = $this->actingAs($user)->get(route('dashboard'));
+
+    expect($response->inertiaProps('auth.user'))->not->toHaveKeys(['two_factor_secret', 'two_factor_recovery_codes', 'password'])
+        ->and($response->getContent())->not->toContain($user->two_factor_secret);
+});
+
+it('changes the password, signs out other sessions and keeps this one', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    storeOtherSession($user);
+
+    $this->actingAs($user)
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => 'Changed-Password-2026!',
+            'password_confirmation' => 'Changed-Password-2026!',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(Hash::check('Changed-Password-2026!', $user->fresh()->password))->toBeTrue()
+        ->and(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeFalse()
+        ->and(AuditEvent::where('event', 'auth.password.changed')->exists())->toBeTrue();
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('rejects a password change with the wrong current password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->put(route('user-password.update'), [
+            'current_password' => 'Not-My-Password-1!',
+            'password' => 'Changed-Password-2026!',
+            'password_confirmation' => 'Changed-Password-2026!',
+        ])
+        ->assertSessionHasErrors(['current_password' => 'The provided password does not match your current password.']);
+});
+
+it('rejects reusing the current password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => UserFactory::PASSWORD,
+            'password_confirmation' => UserFactory::PASSWORD,
+        ])
+        ->assertSessionHasErrors(['password' => 'Your new password must be different from your current password.']);
+});
+
+it('lists the user’s sessions without exposing raw session identifiers', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    storeOtherSession($user);
+
+    $response = $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('security.show'));
+
+    $response->assertInertia(fn (AssertableInertia $page) => $page
+        ->has('sessions', 1)
+        ->where('sessions.0.platform', 'Android')
+        ->where('sessions.0.is_current', false));
+
+    expect($response->getContent())->not->toContain('other-device-session-id');
+});
+
+it('signs out a single other session', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    $sessionId = storeOtherSession($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy', app(BrowserSessions::class)->publicId($sessionId)))
+        ->assertSessionHas('status', 'That session has been signed out.');
+
+    expect(DB::table('sessions')->where('id', $sessionId)->exists())->toBeFalse();
+});
+
+it('cannot sign out another user’s session', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    $otherUser = User::factory()->withTwoFactor()->create();
+    $sessionId = storeOtherSession($otherUser);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy', app(BrowserSessions::class)->publicId($sessionId)))
+        ->assertSessionHas('error');
+
+    expect(DB::table('sessions')->where('id', $sessionId)->exists())->toBeTrue();
+});
+
+it('signs out all other sessions after checking the password', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    storeOtherSession($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy-others'), ['password' => 'Wrong-Password-1!'])
+        ->assertSessionHasErrors(['password' => 'The password is incorrect.']);
+
+    expect(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeTrue();
+
+    $this->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHas('status', 'All other sessions have been signed out.');
+
+    expect(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeFalse();
+});
+
+it('replaces the authenticator and sends the user to re-enrol', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse()
+        ->and(AuditEvent::where('event', 'mfa.reset')->where('user_id', $user->id)->exists())->toBeTrue();
+
+    $this->get(route('dashboard'))->assertRedirect(route('two-factor.setup'));
+});
+
+it('keeps the user signed in on the next page after changing the password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('security.show'))
+        ->assertOk();
+
+    $this->put(route('user-password.update'), [
+        'current_password' => UserFactory::PASSWORD,
+        'password' => 'Changed-Password-2026!',
+        'password_confirmation' => 'Changed-Password-2026!',
+    ])->assertSessionHasNoErrors();
+
+    $this->get(route('security.show'))->assertOk();
+    $this->assertAuthenticatedAs($user);
+});
+
+it('returns to the page an action came from after confirming the password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->from(route('security.show'))
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('password.confirm'));
+
+    $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('security.show'));
+});
+
+it('never returns to another site after confirming the password', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withHeader('referer', 'https://attacker.example/page')
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('password.confirm'));
+
+    $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
+        ->assertRedirect(route('dashboard'));
+});
+
+it('signs out every other session when the user replaces their authenticator', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->withTwoFactor()->create();
+    storeOtherSession($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['code' => currentAuthenticatorCode($user)])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect(DB::table('sessions')->where('id', 'other-device-session-id')->exists())->toBeFalse();
+    $this->assertAuthenticatedAs($user);
+});
+
+it('asks for the password again once the confirmation window has passed', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $window = (int) config('auth.password_timeout');
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time() - $window + 60])
+        ->get(route('security.show'))
+        ->assertOk();
+
+    $this->withSession(['auth.password_confirmed_at' => time() - $window - 1])
+        ->get(route('security.show'))
+        ->assertRedirect(route('password.confirm'));
+});
+
+it('signs out other sessions with any session driver and leaves the password alone', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $passwordHash = $user->password;
+    $otherDeviceStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHas('status', 'All other sessions have been signed out.');
+
+    expect($user->fresh()->password)->toBe($passwordHash)
+        ->and(AuditEvent::where('event', 'auth.sessions.revoked_others')->where('user_id', $user->id)->count())->toBe(1);
+
+    $this->get(route('security.show'))->assertOk();
+
+    $this->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
+        ->get(route('dashboard'))
+        ->assertRedirect(route('login'));
+});
+
+it('signs out other sessions with any session driver after a password change', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $otherDeviceStamp = app(SessionPolicy::class)->stampFor($user);
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => 'Changed-Password-2026!',
+            'password_confirmation' => 'Changed-Password-2026!',
+        ])->assertSessionHasNoErrors();
+
+    $this->get(route('security.show'))->assertOk();
+
+    $this->withSession([SessionPolicy::STAMP => $otherDeviceStamp])
+        ->get(route('dashboard'))
+        ->assertRedirect(route('login'));
+});
+
+it('will not replace the authenticator without a current code', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'))
+        ->assertSessionHasErrors('code');
+
+    $this->post(route('security.two-factor.reset'), ['code' => '000000'])
+        ->assertSessionHasErrors('code');
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeTrue()
+        ->and(AuditEvent::where('event', 'mfa.reset.failed')->where('user_id', $user->id)->count())->toBe(1);
+});
+
+it('replaces the authenticator with a recovery code when the phone is lost', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => 'not-a-recovery-code'])
+        ->assertSessionHasErrors('recovery_code');
+
+    $this->post(route('security.two-factor.reset'), ['recovery_code' => $user->recoveryCodes()[0]])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
+});
+
+it('limits and audits wrong passwords given inside a signed-in session', function () {
+    startAttemptWindow();
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user);
+
+    foreach (range(1, 5) as $attempt) {
+        $this->post(route('password.confirm.store'), ['password' => 'Wrong-Password-1!'])
+            ->assertSessionHasErrors(['password' => 'The provided password was incorrect.']);
+    }
+
+    // Even the right password is refused once the limit is reached.
+    $this->post(route('password.confirm.store'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHasErrors('password');
+
+    $this->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertSessionHasErrors('password');
+
+    expect(AuditEvent::where('event', 'auth.password_check.failed')->where('user_id', $user->id)->count())->toBe(5)
+        ->and(AuditEvent::where('event', 'auth.password_check.locked')->where('user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('counts password guesses made in parallel before checking any of them', function () {
+    startAttemptWindow();
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+    $outcomes = [];
+    $guessesStarted = 0;
+
+    // Ten guesses, each starting before the previous one has been checked,
+    // as parallel requests would.
+    $guess = function () use (&$guess, &$outcomes, &$guessesStarted, $limiter, $user): void {
+        $guessesStarted++;
+
+        $outcomes[] = $limiter->attempt('password', $user, function () use (&$guess, &$guessesStarted): bool {
+            if ($guessesStarted < 10) {
+                $guess();
+            }
+
+            return false;
+        });
+    };
+
+    $guess();
+
+    $checked = collect($outcomes)->filter(fn (AttemptResult $result): bool => $result === AttemptResult::Failed);
+
+    expect($checked)->toHaveCount(AccountAttemptLimiter::MAX_ATTEMPTS);
+});
+
+it('keeps the old password if other sessions cannot be ended', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $passwordHash = $user->password;
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $this->partialMock(SessionPolicy::class)
+        ->shouldReceive('endOtherSessions')
+        ->andThrow(new RuntimeException('Session store unavailable'));
+
+    $this->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => 'Changed-Password-2026!',
+            'password_confirmation' => 'Changed-Password-2026!',
+        ])
+        ->assertServerError();
+
+    expect($user->fresh()->password)->toBe($passwordHash);
+});
+
+it('does not use up a password attempt when the new password is rejected anyway', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => 'Wrong-Password-1!',
+            'password' => 'weak',
+            'password_confirmation' => 'weak',
+        ])
+        ->assertSessionHasErrors('password');
+
+    expect(AuditEvent::where('event', 'auth.password_check.failed')->exists())->toBeFalse();
+});
+
+it('sends an Inertia DELETE that needs password confirmation on with GET', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    $this->actingAs($user)
+        ->withHeader('X-Inertia', 'true')
+        ->delete(route('security.sessions.destroy-others'), ['password' => UserFactory::PASSWORD])
+        ->assertStatus(303)
+        ->assertRedirect(route('password.confirm'));
+});
+
+it('says one minute, not one minutes, near the end of a lock', function () {
+    startAttemptWindow();
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    foreach (range(0, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        $limiter->attempt('password', $user, fn (): bool => false);
+    }
+
+    // Five wrong guesses lock until 180 seconds into the next window; move to
+    // 30 seconds before that.
+    $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 1 + 150)->seconds();
+
+    expect($limiter->lockedMessage('password', $user, 'passwords'))->toBe('Too many incorrect passwords. Try again in 1 minute.');
+});
+
+it('keeps counting wrong guesses made elsewhere after a right guess', function () {
+    startAttemptWindow();
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    foreach (range(1, 4) as $attempt) {
+        $limiter->attempt('password', $user, fn (): bool => false);
+    }
+
+    expect($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Passed)
+        ->and($limiter->attempt('password', $user, fn (): bool => false))->toBe(AttemptResult::Failed)
+        ->and($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Locked);
+});
+
+it('never counts below zero when the window ends during a check', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    $limiter->attempt('password', $user, function (): bool {
+        $this->travel(AccountAttemptLimiter::DECAY_SECONDS + 1)->seconds();
+
+        return true;
+    });
+
+    expect($limiter->attempts('password', $user))->toBe(0);
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        $limiter->attempt('password', $user, fn (): bool => false);
+    }
+
+    expect($limiter->attempt('password', $user, fn (): bool => true))->toBe(AttemptResult::Locked);
+});
+
+it('never takes back a guess counted in a later window', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    // A right guess is still being checked when its window ends, and a wrong
+    // guess from somewhere else opens the next window.
+    $limiter->attempt('password', $user, function () use ($limiter, $user): bool {
+        $this->travel(AccountAttemptLimiter::DECAY_SECONDS)->seconds();
+        $limiter->attempt('password', $user, fn (): bool => false);
+
+        return true;
+    });
+
+    expect($limiter->attempts('password', $user))->toBe(1);
+});
+
+it('limits guesses made either side of a window boundary together', function () {
+    $user = User::factory()->create();
+    $limiter = app(AccountAttemptLimiter::class);
+
+    startAttemptWindow();
+    $this->travel(AccountAttemptLimiter::DECAY_SECONDS - 3)->seconds(); // the last seconds of a window
+
+    foreach (range(1, AccountAttemptLimiter::MAX_ATTEMPTS) as $attempt) {
+        expect($limiter->attempt('password', $user, fn (): bool => false))->toBe(AttemptResult::Failed);
+    }
+
+    $this->travel(3)->seconds(); // the first second of the next window
+
+    expect($limiter->attempt('password', $user, fn (): bool => false))->toBe(AttemptResult::Locked);
+});
+
+it('rejects a password longer than the 72 bytes the hash uses', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $tooLong = 'Aa1!'.str_repeat('é', 40); // 44 characters, 84 bytes
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => $tooLong,
+            'password_confirmation' => $tooLong,
+        ])
+        ->assertSessionHasErrors('password');
+});
+
+it('gives one error, not two, for a password that is too long', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $tooLong = 'Aa1!'.str_repeat('x', 70); // 74 characters and bytes
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'current_password' => UserFactory::PASSWORD,
+            'password' => $tooLong,
+            'password_confirmation' => $tooLong,
+        ])
+        ->assertSessionHasErrors('password');
+
+    expect(session('errors')->get('password'))->toHaveCount(1);
+});
+
+it('does not look up a password that is too long in the breach list', function () {
+    Http::fake();
+    Password::defaults(fn (): Password => Password::min(12)->uncompromised());
+    $tooLong = 'Aa1!'.str_repeat('x', 70);
+
+    $rules = (new class
+    {
+        use PasswordValidationRules;
+
+        /**
+         * @return array<int, mixed>
+         */
+        public function rules(): array
+        {
+            return $this->passwordRules();
+        }
+    })->rules();
+
+    $validator = Validator::make(['password' => $tooLong, 'password_confirmation' => $tooLong], ['password' => $rules]);
+
+    expect($validator->fails())->toBeTrue();
+    Http::assertNothingSent();
+});
+
+it('does not look up a password whose confirmation does not match', function () {
+    Http::fake();
+    Password::defaults(fn (): Password => Password::min(12)->uncompromised());
+
+    $rules = (new class
+    {
+        use PasswordValidationRules;
+
+        /**
+         * @return array<int, mixed>
+         */
+        public function rules(): array
+        {
+            return $this->passwordRules();
+        }
+    })->rules();
+
+    $validator = Validator::make(['password' => 'Correct-Horse-9-Battery', 'password_confirmation' => 'Correct-Horse-9-Batery'], ['password' => $rules]);
+
+    expect($validator->errors()->first('password'))->toContain('confirmation');
+    Http::assertNothingSent();
+});
+
+it('takes a setting left blank as its default, not as off', function () {
+    $keys = [
+        'CRMS_REQUIRE_MFA', 'CRMS_NOTIFY_NEW_DEVICE', 'CRMS_IDLE_TIMEOUT', 'CRMS_SESSION_ABSOLUTE_LIFETIME',
+        'CRMS_CHALLENGE_TIMEOUT', 'CRMS_CSP_ENABLED', 'CRMS_ORGANISATION', 'CRMS_TAGLINE',
+    ];
+
+    foreach ($keys as $key) {
+        $_ENV[$key] = $_SERVER[$key] = '';
+    }
+
+    $crms = require config_path('crms.php');
+
+    foreach ($keys as $key) {
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
+
+    expect($crms['auth'])->toMatchArray([
+        'require_mfa' => true,
+        'notify_new_device' => true,
+        'idle_timeout' => 15,
+        'absolute_lifetime' => 720,
+        'challenge_timeout' => 10,
+    ])
+        ->and($crms['security']['csp'])->toBeTrue()
+        ->and($crms['product']['organisation'])->toBeNull()
+        ->and($crms['product']['tagline'])->toBe('Evidence-led crime analysis');
+});
+
+it('still lets a setting be turned off on purpose', function () {
+    $_ENV['CRMS_REQUIRE_MFA'] = $_SERVER['CRMS_REQUIRE_MFA'] = 'false';
+    $_ENV['CRMS_IDLE_TIMEOUT'] = $_SERVER['CRMS_IDLE_TIMEOUT'] = '0';
+
+    $crms = require config_path('crms.php');
+
+    unset($_ENV['CRMS_REQUIRE_MFA'], $_SERVER['CRMS_REQUIRE_MFA'], $_ENV['CRMS_IDLE_TIMEOUT'], $_SERVER['CRMS_IDLE_TIMEOUT']);
+
+    expect($crms['auth']['require_mfa'])->toBeFalse()
+        ->and($crms['auth']['idle_timeout'])->toBe(0);
+});
+
+it('takes the remaining settings left blank as their defaults', function () {
+    $keys = ['CRMS_SESSION_ABSOLUTE_WARNING', 'AUTH_PASSWORD_TIMEOUT', 'CRMS_ACTIVATION_EXPIRE'];
+
+    foreach ($keys as $key) {
+        $_ENV[$key] = $_SERVER[$key] = '';
+    }
+
+    $crms = require config_path('crms.php');
+    $auth = require config_path('auth.php');
+
+    foreach ($keys as $key) {
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
+
+    expect($crms['auth']['absolute_warning'])->toBe(300)
+        ->and($auth['password_timeout'])->toBe(900)
+        ->and($auth['passwords']['invitations']['expire'])->toBe(4320);
+});
+
+it('keeps the password confirmation timeout from becoming the three-hour default', function () {
+    $_ENV['AUTH_PASSWORD_TIMEOUT'] = $_SERVER['AUTH_PASSWORD_TIMEOUT'] = '0';
+
+    $auth = require config_path('auth.php');
+
+    unset($_ENV['AUTH_PASSWORD_TIMEOUT'], $_SERVER['AUTH_PASSWORD_TIMEOUT']);
+
+    expect($auth['password_timeout'])->toBe(900);
+});
