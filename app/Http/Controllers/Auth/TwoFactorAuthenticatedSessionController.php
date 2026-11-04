@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Requests\Auth\TwoFactorLoginRequest;
-use App\Services\SessionPolicy;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
@@ -47,12 +46,8 @@ class TwoFactorAuthenticatedSessionController extends FortifyTwoFactorAuthentica
 
         event(new ValidTwoFactorAuthenticationCodeProvided($user));
 
-        // Read before the challenge data is cleared.
-        $remember = $request->remember();
-
-        $this->guard->login($user, $remember);
-
-        app(SessionPolicy::class)->endChallenge($request->session());
+        // Passing the challenge ended it (keeping the remember choice).
+        $this->guard->login($user, $request->remember());
 
         $request->session()->regenerate();
 

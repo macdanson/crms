@@ -18,9 +18,10 @@ trait PasswordValidationRules
      */
     protected function passwordRules(): array
     {
-        // The length check comes first and stops validation, so a password
-        // that is too long never reaches the policy's breach lookup.
-        return ['bail', 'required', 'string', $this->fitsPasswordHash(...), Password::default(), 'confirmed'];
+        // Validation stops at the first failure, and the policy (with its
+        // breach lookup) comes last: a password that is too long, or whose
+        // confirmation does not match, is never looked up.
+        return ['bail', 'required', 'string', $this->fitsPasswordHash(...), 'confirmed', Password::default()];
     }
 
     /**

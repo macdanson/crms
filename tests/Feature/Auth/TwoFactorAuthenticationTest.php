@@ -13,11 +13,13 @@ use Database\Factories\UserFactory;
 use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Laravel\Fortify\Actions\GenerateNewRecoveryCodes;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
 
@@ -877,4 +879,47 @@ it('shows new recovery codes at the end of enrolment when the confirmed ones can
         ->withSession(['status' => Fortify::TWO_FACTOR_AUTHENTICATION_CONFIRMED])
         ->get(route('two-factor.setup'))
         ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'recovery')->count('recoveryCodes', 8));
+});
+
+it('shows the recovery codes another page load already made instead of making new ones', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
+    $user = $user->fresh();
+
+    // Another load of the page replaces the unreadable codes first.
+    $other = User::find($user->id);
+    app(GenerateNewRecoveryCodes::class)($other);
+
+    $this->actingAs($user)
+        ->withSession(['status' => Fortify::TWO_FACTOR_AUTHENTICATION_CONFIRMED])
+        ->get(route('two-factor.setup'))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'recovery')->where('recoveryCodes', $other->recoveryCodes()));
+
+    expect($user->fresh()->recoveryCodes())->toBe($other->recoveryCodes());
+});
+
+it('ends a challenge for a deleted account without leaving a wrong-code error', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+    $user->delete();
+
+    $this->get(route('two-factor.login'))
+        ->assertRedirect(route('login'))
+        ->assertSessionHasNoErrors()
+        ->assertSessionMissing('error');
+
+    expect(session()->has('login.id'))->toBeFalse();
+});
+
+it('does not report an unreadable new secret that it replaces', function () {
+    Exceptions::fake();
+    $user = User::factory()->create(['two_factor_secret' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())->withSession(['auth.password_confirmed_at' => time()]);
+
+    $this->getJson(route('two-factor.secret-key'))->assertStatus(409);
+    $this->get(route('two-factor.setup'))->assertOk();
+
+    Exceptions::assertNothingReported();
 });

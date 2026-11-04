@@ -180,9 +180,17 @@ class AccountAttemptLimiter
             return;
         }
 
+        $alertKey = "{$secret}-check:{$user->getKey()}:locked";
+
+        // Most refused guesses come during a lock already alerted on; they
+        // skip working out how long the lock lasts.
+        if (Cache::has($alertKey)) {
+            return;
+        }
+
         $lockLasts = $this->unlocksAt($secret, $user)->getTimestamp() - now()->getTimestamp();
 
-        if (Cache::add("{$secret}-check:{$user->getKey()}:locked", true, max(self::DECAY_SECONDS, $lockLasts))) {
+        if (Cache::add($alertKey, true, max(self::DECAY_SECONDS, $lockLasts))) {
             $onLock();
         }
     }

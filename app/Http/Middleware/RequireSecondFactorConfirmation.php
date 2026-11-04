@@ -83,7 +83,7 @@ class RequireSecondFactorConfirmation
      */
     private function duringEnrolment(Request $request, User $user, Closure $next): Response
     {
-        if (! $request->routeIs(...self::ENROLMENT_ROUTES) || $user->two_factor_secret === null || $user->twoFactorSecret() !== null) {
+        if (! $request->routeIs(...self::ENROLMENT_ROUTES) || ! $user->hasUnreadableTwoFactorSecret()) {
             return $next($request);
         }
 

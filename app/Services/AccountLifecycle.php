@@ -205,11 +205,9 @@ class AccountLifecycle
 
     /**
      * Clear the authenticator with a recovery code as proof. The codes are
-     * cleared only while they are still the stored value that held the code,
-     * so a parallel request cannot use the same code, and a reset that fails
-     * costs no code. If another code was used or the codes were replaced
-     * meanwhile, it tries again against the latest codes; each try reads
-     * them outside a transaction, so it sees the latest committed value.
+     * cleared only while they are still the stored value that held the code
+     * (SecondFactor::useRecoveryCode), so a parallel request cannot use the
+     * same code, and a reset that fails costs no code.
      *
      * @return int The number of stored sessions deleted.
      *
@@ -217,25 +215,21 @@ class AccountLifecycle
      */
     private function clearTwoFactorWithRecoveryCode(User $user, ?Session $keepSession, string $recoveryCode): int
     {
-        for ($attempt = 0; $attempt < 10; $attempt++) {
-            $codesHoldingProof = app(SecondFactor::class)->storedCodesHolding($user, $recoveryCode);
+        $revoked = null;
 
-            if ($codesHoldingProof === null) {
-                throw ValidationException::withMessages(['recovery_code' => 'That recovery code is not valid.']);
-            }
+        $used = app(SecondFactor::class)->useRecoveryCode($user, $recoveryCode, function (string $storedCodes) use ($user, $keepSession, &$revoked): bool {
+            $revoked = $this->clearTwoFactor($user, $keepSession, $storedCodes);
 
-            $revoked = $this->clearTwoFactor($user, $keepSession, $codesHoldingProof);
+            return $revoked !== null;
+        });
 
-            if ($revoked !== null) {
-                $this->audit->record('mfa.recovery_code.used', AuditOutcome::Success, $user, ['purpose' => 'authenticator_reset']);
-
-                return $revoked;
-            }
+        if (! $used || $revoked === null) {
+            throw ValidationException::withMessages(['recovery_code' => 'That recovery code is not valid.']);
         }
 
-        throw ValidationException::withMessages([
-            'recovery_code' => 'Your recovery codes changed while this code was being checked. Please try again.',
-        ]);
+        $this->audit->record('mfa.recovery_code.used', AuditOutcome::Success, $user, ['purpose' => 'authenticator_reset']);
+
+        return $revoked;
     }
 
     /**

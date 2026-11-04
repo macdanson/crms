@@ -197,6 +197,26 @@ class User extends Authenticatable
     }
 
     /**
+     * Whether there is an authenticator secret that cannot be read. Unlike
+     * twoFactorSecret(), this is not reported: its callers handle the case
+     * by replacing the secret.
+     */
+    public function hasUnreadableTwoFactorSecret(): bool
+    {
+        if ($this->two_factor_secret === null) {
+            return false;
+        }
+
+        try {
+            Fortify::currentEncrypter()->decrypt($this->two_factor_secret);
+
+            return false;
+        } catch (DecryptException) {
+            return true;
+        }
+    }
+
+    /**
      * Decode a stored recovery codes value as Fortify writes it (encrypted
      * JSON list). Anything unreadable is no codes; a failure to decrypt is
      * reported.

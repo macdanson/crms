@@ -81,7 +81,12 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
      */
     public function hasChallengedUser(): bool
     {
-        if (! $this->session()->has('login.id')) {
+        // Fortify's check, which (unlike challengedUser()) does not build a
+        // failure response, so no "invalid code" error is left behind. A
+        // challenge for an account that no longer exists is ended.
+        if (! parent::hasChallengedUser()) {
+            app(SessionPolicy::class)->endChallenge($this->session());
+
             return false;
         }
 
@@ -103,8 +108,8 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
 
     /**
      * The recovery code given, once it has been used up, or null when it is
-     * not (or no longer) one of the user's. Fortify drops the challenge only
-     * when a code is returned.
+     * not (or no longer) one of the user's. The challenge ends only when a
+     * code is returned.
      */
     public function validRecoveryCode(): ?string
     {
@@ -119,7 +124,7 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             return null;
         }
 
-        $this->session()->forget('login.id');
+        $this->endPassedChallenge();
 
         return trim($recoveryCode);
     }
@@ -140,9 +145,20 @@ class TwoFactorLoginRequest extends FortifyTwoFactorLoginRequest
             return false;
         }
 
-        $this->session()->forget('login.id');
+        $this->endPassedChallenge();
 
         return true;
+    }
+
+    /**
+     * End the challenge once it has been passed. The remember choice is read
+     * first: remember() keeps it, and ending the challenge removes it.
+     */
+    private function endPassedChallenge(): void
+    {
+        $this->remember();
+
+        app(SessionPolicy::class)->endChallenge($this->session());
     }
 
     /**

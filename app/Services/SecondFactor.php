@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use Closure;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
@@ -49,24 +50,14 @@ class SecondFactor
     }
 
     /**
-     * The stored recovery codes value, read afresh, if it holds the code;
-     * otherwise null. An action can then change the codes only while they
-     * are still exactly this value (see AccountLifecycle::resetTwoFactor).
-     */
-    public function storedCodesHolding(User $user, string $recoveryCode): ?string
-    {
-        $stored = $this->storedCodes($user);
-
-        return $stored !== null && $this->matchingCode($stored['codes'], $recoveryCode) !== null ? $stored['encrypted'] : null;
-    }
-
-    /**
      * Whether the code is one of the user's unused recovery codes, read
      * afresh. Does not use it up.
      */
     public function hasRecoveryCode(User $user, string $recoveryCode): bool
     {
-        return $this->storedCodesHolding($user, $recoveryCode) !== null;
+        $stored = $this->storedCodes($user);
+
+        return $stored !== null && $this->matchingCode($stored['codes'], $recoveryCode) !== null;
     }
 
     /**
@@ -74,18 +65,49 @@ class SecondFactor
      * one. Returns false when the code is not (or no longer) one of the
      * user's.
      *
-     * The replacement is saved only if the stored codes are still the ones
-     * that were read (compare-and-swap), so two requests giving the same
-     * code cannot both succeed, at sign-in or in settings.
+     * @throws ValidationException if the codes keep changing (see useRecoveryCode).
+     */
+    public function consumeRecoveryCode(User $user, string $recoveryCode): bool
+    {
+        return $this->useRecoveryCode($user, $recoveryCode, function (string $storedCodes, string $usedCode, array $codes) use ($user): bool {
+            $replacedCodes = Fortify::currentEncrypter()->encrypt(json_encode(
+                array_map(fn (string $code): string => $code === $usedCode ? RecoveryCode::generate() : $code, $codes),
+            ));
+
+            $updated = User::query()
+                ->whereKey($user->getKey())
+                ->where('two_factor_recovery_codes', $storedCodes)
+                ->update(['two_factor_recovery_codes' => $replacedCodes]);
+
+            if ($updated !== 1) {
+                return false;
+            }
+
+            $user->forceFill(['two_factor_recovery_codes' => $replacedCodes])->syncOriginalAttribute('two_factor_recovery_codes');
+
+            RecoveryCodeReplaced::dispatch($user, $usedCode);
+
+            return true;
+        });
+    }
+
+    /**
+     * Use a recovery code up through $write, which must change the stored
+     * codes only while they are still $storedCodes (compare-and-swap) and
+     * return whether it did. Returns false when the code is not (or no
+     * longer) one of the user's.
      *
-     * A failed swap means another request changed the codes first, so it is
-     * retried against the new codes: false then always means the code is
-     * really not there, never that the request lost a race.
+     * So two requests giving the same code cannot both succeed. A failed
+     * swap means another request changed the codes first, so it is retried
+     * against the new codes: false then always means the code is really not
+     * there, never that the request lost a race.
+     *
+     * @param  Closure(string $storedCodes, string $usedCode, list<string> $codes): bool  $write
      *
      * @throws ValidationException if the codes keep changing (a safety net),
      *                             asking the user to try again.
      */
-    public function consumeRecoveryCode(User $user, string $recoveryCode): bool
+    public function useRecoveryCode(User $user, string $recoveryCode, Closure $write): bool
     {
         for ($attempt = 0; $attempt < self::MAX_SWAP_ATTEMPTS; $attempt++) {
             $stored = $this->storedCodes($user);
@@ -100,20 +122,7 @@ class SecondFactor
                 return false;
             }
 
-            $replacedCodes = Fortify::currentEncrypter()->encrypt(json_encode(
-                array_map(fn (string $code): string => $code === $usedCode ? RecoveryCode::generate() : $code, $stored['codes']),
-            ));
-
-            $updated = User::query()
-                ->whereKey($user->getKey())
-                ->where('two_factor_recovery_codes', $stored['encrypted'])
-                ->update(['two_factor_recovery_codes' => $replacedCodes]);
-
-            if ($updated === 1) {
-                $user->forceFill(['two_factor_recovery_codes' => $replacedCodes])->syncOriginalAttribute('two_factor_recovery_codes');
-
-                RecoveryCodeReplaced::dispatch($user, $usedCode);
-
+            if ($write($stored['encrypted'], $usedCode, $stored['codes'])) {
                 return true;
             }
         }
@@ -131,8 +140,11 @@ class SecondFactor
      */
     private function storedCodes(User $user): ?array
     {
-        // The raw stored value, untouched by model casts: the swap compares it.
-        $encrypted = User::query()->toBase()->where($user->getKeyName(), $user->getKey())->value('two_factor_recovery_codes');
+        // The raw stored value, untouched by model casts: the swap compares
+        // it. A locking read sees the latest committed value even inside a
+        // caller's transaction, where a plain read could keep returning the
+        // codes as they were when it began, so every retry would fail.
+        $encrypted = User::query()->toBase()->where($user->getKeyName(), $user->getKey())->lockForUpdate()->value('two_factor_recovery_codes');
 
         if (! is_string($encrypted)) {
             return null;

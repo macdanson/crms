@@ -561,3 +561,26 @@ it('does not look up a password that is too long in the breach list', function (
     expect($validator->fails())->toBeTrue();
     Http::assertNothingSent();
 });
+
+it('does not look up a password whose confirmation does not match', function () {
+    Http::fake();
+    Password::defaults(fn (): Password => Password::min(12)->uncompromised());
+
+    $rules = (new class
+    {
+        use PasswordValidationRules;
+
+        /**
+         * @return array<int, mixed>
+         */
+        public function rules(): array
+        {
+            return $this->passwordRules();
+        }
+    })->rules();
+
+    $validator = Validator::make(['password' => 'Correct-Horse-9-Battery', 'password_confirmation' => 'Correct-Horse-9-Batery'], ['password' => $rules]);
+
+    expect($validator->errors()->first('password'))->toContain('confirmation');
+    Http::assertNothingSent();
+});
