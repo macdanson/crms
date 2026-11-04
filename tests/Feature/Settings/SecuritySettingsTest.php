@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Fortify\PasswordValidationRules;
 use App\Enums\AttemptResult;
 use App\Models\AuditEvent;
 use App\Models\User;
@@ -9,6 +10,9 @@ use App\Services\SessionPolicy;
 use Database\Factories\UserFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Testing\AssertableInertia;
 
 /**
@@ -532,4 +536,28 @@ it('gives one error, not two, for a password that is too long', function () {
         ->assertSessionHasErrors('password');
 
     expect(session('errors')->get('password'))->toHaveCount(1);
+});
+
+it('does not look up a password that is too long in the breach list', function () {
+    Http::fake();
+    Password::defaults(fn (): Password => Password::min(12)->uncompromised());
+    $tooLong = 'Aa1!'.str_repeat('x', 70);
+
+    $rules = (new class
+    {
+        use PasswordValidationRules;
+
+        /**
+         * @return array<int, mixed>
+         */
+        public function rules(): array
+        {
+            return $this->passwordRules();
+        }
+    })->rules();
+
+    $validator = Validator::make(['password' => $tooLong, 'password_confirmation' => $tooLong], ['password' => $rules]);
+
+    expect($validator->fails())->toBeTrue();
+    Http::assertNothingSent();
 });

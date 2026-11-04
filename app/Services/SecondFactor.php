@@ -66,9 +66,7 @@ class SecondFactor
      */
     public function hasRecoveryCode(User $user, string $recoveryCode): bool
     {
-        $stored = $this->storedCodes($user);
-
-        return $stored !== null && $this->matchingCode($stored['codes'], $recoveryCode) !== null;
+        return $this->storedCodesHolding($user, $recoveryCode) !== null;
     }
 
     /**

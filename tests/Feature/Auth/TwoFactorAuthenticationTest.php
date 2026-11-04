@@ -764,7 +764,7 @@ it('lists no recovery codes, rather than failing, when they cannot be read', fun
         ->assertExactJson([]);
 });
 
-it('replaces the authenticator with a recovery code without making a replacement code', function () {
+it('replaces the authenticator with a recovery code, recording its use without making a replacement code', function () {
     $user = User::factory()->withTwoFactor()->create();
 
     $this->actingAs($user)
@@ -772,8 +772,9 @@ it('replaces the authenticator with a recovery code without making a replacement
         ->post(route('security.two-factor.reset'), ['recovery_code' => $user->recoveryCodes()[0]])
         ->assertRedirect(route('two-factor.setup'));
 
-    expect(AuditEvent::where('event', 'mfa.recovery_code.used')->exists())->toBeFalse()
-        ->and(AuditEvent::where('event', 'mfa.reset')->sole()->context)->toMatchArray(['proof' => 'recovery_code']);
+    expect(AuditEvent::where('event', 'mfa.recovery_code.used')->sole()->context)->toBe(['purpose' => 'authenticator_reset'])
+        ->and(AuditEvent::where('event', 'mfa.reset')->sole()->context)->toMatchArray(['proof' => 'recovery_code'])
+        ->and($user->fresh()->two_factor_recovery_codes)->toBeNull();
 });
 
 it('counts the remaining recovery codes without reading them from the database again', function () {
@@ -788,4 +789,92 @@ it('counts the remaining recovery codes without reading them from the database a
 
     expect($user->remainingRecoveryCodeCount())->toBe(8)
         ->and($reads)->toBe(0);
+});
+
+it('sends an enrolment whose new secret cannot be read back to the setup page', function () {
+    $user = User::factory()->create(['two_factor_secret' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())->withSession(['auth.password_confirmed_at' => time()]);
+
+    $this->getJson(route('two-factor.secret-key'))->assertStatus(409);
+    $this->post(route('two-factor.confirm'), ['code' => '123456'])
+        ->assertRedirect(route('two-factor.setup'))
+        ->assertSessionHas('error');
+});
+
+it('replaces the authenticator with a recovery code even if another code is used meanwhile', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    $codes = $user->recoveryCodes();
+    $reads = 0;
+
+    // Once the reset has read the codes, another request uses a different code.
+    DB::listen(function (QueryExecuted $query) use (&$reads, $codes, $user): void {
+        if (! readsRecoveryCodes($query) || ++$reads !== 2) {
+            return;
+        }
+
+        app(SecondFactor::class)->consumeRecoveryCode(User::find($user->id), $codes[1]);
+    });
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('security.two-factor.reset'), ['recovery_code' => $codes[0]])
+        ->assertRedirect(route('two-factor.setup'));
+
+    expect($reads)->toBeGreaterThan(2)
+        ->and($user->fresh()->hasEnabledTwoFactorAuthentication())->toBeFalse();
+});
+
+it('sends one lock alert for a lock that lasts longer than a quarter hour', function () {
+    Notification::fake();
+    $user = User::factory()->withTwoFactor()->create();
+
+    startAttemptWindow();
+    lockSignInCodes($user, AccountAttemptLimiter::MAX_ATTEMPTS);
+
+    // Still within the same lock, more than 15 minutes after it began.
+    $this->travel(AccountAttemptLimiter::DECAY_SECONDS)->seconds();
+    expect(app(AccountAttemptLimiter::class)->unlocksAt(SecondFactorCheck::AT_SIGN_IN, $user)->isFuture())->toBeTrue();
+    lockSignInCodes($user, 1);
+
+    Notification::assertSentToTimes($user, SignInCodesLocked::class, 1);
+});
+
+it('records an expired challenge, and checks the account, when the code page is opened', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+    $this->travel(config('crms.auth.challenge_timeout') + 1)->minutes();
+    $this->get(route('two-factor.login'))->assertRedirect(route('login'));
+
+    expect(AuditEvent::where('event', 'auth.challenge.expired')->where('user_id', $user->id)->exists())->toBeTrue();
+
+    $suspended = User::factory()->withTwoFactor()->create();
+    startTwoFactorLogin($suspended);
+    app(AccountLifecycle::class)->suspend($suspended, 'Investigation');
+
+    $this->get(route('two-factor.login'))
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('error', $suspended->fresh()->status->signInBlockedMessage());
+});
+
+it('reads the remember choice before the challenge data is cleared', function () {
+    $user = User::factory()->withTwoFactor()->create();
+
+    startTwoFactorLogin($user);
+
+    $response = $this->withSession(['login.remember' => true])
+        ->post(route('two-factor.login.store'), ['code' => currentAuthenticatorCode($user)]);
+
+    expect(collect($response->headers->getCookies())->contains(fn ($cookie): bool => str_starts_with($cookie->getName(), 'remember_web_')))->toBeTrue();
+});
+
+it('shows new recovery codes at the end of enrolment when the confirmed ones cannot be read', function () {
+    $user = User::factory()->withTwoFactor()->create();
+    DB::table('users')->where('id', $user->id)->update(['two_factor_recovery_codes' => 'not-a-valid-ciphertext']);
+
+    $this->actingAs($user->fresh())
+        ->withSession(['status' => Fortify::TWO_FACTOR_AUTHENTICATION_CONFIRMED])
+        ->get(route('two-factor.setup'))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('step', 'recovery')->count('recoveryCodes', 8));
 });

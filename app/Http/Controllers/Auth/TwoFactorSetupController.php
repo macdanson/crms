@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Fortify\Actions\GenerateNewRecoveryCodes;
 use Laravel\Fortify\Fortify;
 
 /**
@@ -27,6 +28,13 @@ class TwoFactorSetupController extends Controller
 
         if ($user->hasEnabledTwoFactorAuthentication()) {
             if ($request->session()->get('status') === Fortify::TWO_FACTOR_AUTHENTICATION_CONFIRMED) {
+                // Codes that cannot be read are replaced, so the user always
+                // leaves enrolment with codes they have seen.
+                if ($user->recoveryCodes() === []) {
+                    app(GenerateNewRecoveryCodes::class)($user);
+                    $user->refresh();
+                }
+
                 return Inertia::render('auth/TwoFactorSetup', [
                     'step' => 'recovery',
                     'qrCodeSvg' => null,

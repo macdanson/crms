@@ -168,15 +168,21 @@ class AccountAttemptLimiter
     }
 
     /**
-     * Run $onLock at most once per DECAY_SECONDS. Someone guessing at the
-     * allowed rate reaches the limit again every few minutes; that is still
-     * one continuing lock, not a new one each time.
+     * Run $onLock at most once per DECAY_SECONDS, and never twice within one
+     * lock. Someone guessing at the allowed rate reaches the limit again
+     * every few minutes; that is still one continuing lock.
      *
      * @param  (Closure(): void)|null  $onLock
      */
     private function reachedLimit(string $secret, User $user, ?Closure $onLock): void
     {
-        if ($onLock !== null && Cache::add("{$secret}-check:{$user->getKey()}:locked", true, self::DECAY_SECONDS)) {
+        if ($onLock === null) {
+            return;
+        }
+
+        $lockLasts = $this->unlocksAt($secret, $user)->getTimestamp() - now()->getTimestamp();
+
+        if (Cache::add("{$secret}-check:{$user->getKey()}:locked", true, max(self::DECAY_SECONDS, $lockLasts))) {
             $onLock();
         }
     }

@@ -19,6 +19,9 @@ use Symfony\Component\HttpFoundation\Response;
  * - viewing or replacing recovery codes, or switching multi-factor
  *   authentication off, needs a recent proof of the second factor.
  *
+ * While enrolling, a new secret that can no longer be read sends the user
+ * back to the setup page, which replaces it.
+ *
  * Fortify registers these routes itself, so they are matched by name.
  */
 class RequireSecondFactorConfirmation
@@ -48,8 +51,12 @@ class RequireSecondFactorConfirmation
     {
         $user = $request->user();
 
-        if (! $user instanceof User || ! $user->hasEnabledTwoFactorAuthentication()) {
+        if (! $user instanceof User) {
             return $next($request);
+        }
+
+        if (! $user->hasEnabledTwoFactorAuthentication()) {
+            return $this->duringEnrolment($request, $user, $next);
         }
 
         if ($request->routeIs(...self::ENROLMENT_ROUTES)) {
@@ -65,5 +72,25 @@ class RequireSecondFactorConfirmation
         }
 
         return $next($request);
+    }
+
+    /**
+     * Fortify's enrolment routes decrypt the new secret directly. If it can
+     * no longer be read (for example after an app key change), send the
+     * user back to the setup page, which replaces it, instead of failing.
+     *
+     * @param  Closure(Request): (Response)  $next
+     */
+    private function duringEnrolment(Request $request, User $user, Closure $next): Response
+    {
+        if (! $request->routeIs(...self::ENROLMENT_ROUTES) || $user->two_factor_secret === null || $user->twoFactorSecret() !== null) {
+            return $next($request);
+        }
+
+        $message = 'Your setup code has expired. Scan the new code on this page.';
+
+        return ResponseFormat::wantsJson($request)
+            ? response()->json(['message' => $message], 409)
+            : redirect()->route('two-factor.setup')->with('error', $message);
     }
 }
