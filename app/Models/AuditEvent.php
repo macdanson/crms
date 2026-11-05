@@ -22,6 +22,11 @@ use LogicException;
  * @property int|null $user_id
  * @property string $event
  * @property AuditOutcome $outcome
+ * @property string|null $record_type
+ * @property string|null $record_id
+ * @property int|null $actor_district_id
+ * @property int|null $actor_station_id
+ * @property string|null $seal
  * @property string|null $ip_address
  * @property string|null $user_agent
  * @property string|null $session_hash

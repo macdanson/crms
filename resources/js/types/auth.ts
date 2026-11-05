@@ -10,6 +10,9 @@ export type User = {
     staff_number: string | null;
     initials: string;
     two_factor_enabled: boolean;
+    /** Used only to show the right menu items; the server authorises every action. */
+    permissions: string[];
+    unread_notifications: number;
 };
 
 export type Auth = {

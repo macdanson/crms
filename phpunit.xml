@@ -22,6 +22,10 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CRMS_AUDIT_SEAL_KEY" value="synthetic-audit-seal-key-for-tests"/>
+        <env name="CRMS_DATA_KEYS" value="1:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="/>
+        <env name="CRMS_IDENTIFIER_LOOKUP_KEY" value="synthetic-identifier-lookup-key-for-tests"/>
+        <env name="CRMS_DOCUMENT_SCANNER" value="none"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>

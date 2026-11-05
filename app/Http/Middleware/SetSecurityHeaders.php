@@ -44,7 +44,9 @@ class SetSecurityHeaders
             $headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
-        if ($cspEnabled) {
+        // A response may set a stricter policy of its own, such as the sandbox
+        // around a previewed document.
+        if ($cspEnabled && ! $headers->has('Content-Security-Policy')) {
             $headers->set('Content-Security-Policy', $this->contentSecurityPolicy());
         }
 

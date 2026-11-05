@@ -25,6 +25,14 @@ const content = computed(
                 title: 'Page not found',
                 text: 'The page you requested does not exist or has moved.',
             },
+            409: {
+                title: 'Not available yet',
+                text: 'This file cannot be opened until it has passed its malware scan. Try again shortly, or contact your administrator if this continues.',
+            },
+            410: {
+                title: 'No longer available',
+                text: 'This has already been collected or has expired. Request it again if you still need it.',
+            },
             429: {
                 title: 'Too many requests',
                 text: 'Please wait a minute before trying again.',

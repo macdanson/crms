@@ -153,6 +153,40 @@ class AccountLifecycle
     }
 
     /**
+     * Close the account of someone who has left or lost their authorisation
+     * (developer guide §6.1). Their sessions end and their roles are revoked,
+     * so restoring the account later gives back no access by itself.
+     */
+    public function deactivate(User $user, string $reason, ?User $actor = null): void
+    {
+        $revoked = DB::transaction(function () use ($user, $reason, $actor): int {
+            $user->forceFill([
+                'status' => AccountStatus::Deactivated,
+                'status_before_suspension' => null,
+                'suspended_at' => null,
+                'suspension_reason' => $reason,
+                'remember_token' => Str::random(60),
+            ])->save();
+
+            $user->roleAssignments()->active()->update([
+                'revoked_at' => now(),
+                'revoked_by' => $actor?->getKey(),
+                'revocation_reason' => 'Account deactivated: '.$reason,
+            ]);
+
+            $user->forgetActiveRoles();
+
+            return $this->policy->endOtherSessions($user);
+        });
+
+        $this->audit->record('account.deactivated', AuditOutcome::Success, $user, [
+            'actor_id' => $actor?->getKey(),
+            'reason' => $reason,
+            'sessions_revoked' => $revoked,
+        ]);
+    }
+
+    /**
      * Lift a suspension, returning the account to the status it had. So an
      * account suspended before its owner activated it returns to Pending,
      * and the owner must still prove they control the email address through

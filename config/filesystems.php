@@ -38,6 +38,18 @@ return [
             'report' => false,
         ],
 
+        // Case documents and prepared exports, encrypted by the application.
+        // Never give this disk a URL. Production needs an approved private
+        // store (developer guide §19).
+        'documents' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/documents'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

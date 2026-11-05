@@ -12,7 +12,7 @@ void createInertiaApp({
             return AuthLayout;
         }
 
-        if (name === 'Error') {
+        if (name === 'Error' || name === 'cases/Print') {
             return null;
         }
 

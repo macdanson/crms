@@ -3,6 +3,9 @@
 namespace Database\Factories;
 
 use App\Enums\AccountStatus;
+use App\Enums\Role;
+use App\Models\RoleAssignment;
+use App\Models\Station;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Collection;
@@ -78,6 +81,33 @@ class UserFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => AccountStatus::Deactivated,
         ]);
+    }
+
+    /**
+     * A user placed at a station (and so in its district).
+     */
+    public function atStation(Station $station): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'station_id' => $station->id,
+            'district_id' => $station->district_id,
+        ]);
+    }
+
+    /**
+     * A user holding the given roles.
+     */
+    public function withRole(Role ...$roles): static
+    {
+        return $this->afterCreating(function (User $user) use ($roles): void {
+            foreach ($roles as $role) {
+                RoleAssignment::factory()->create([
+                    'user_id' => $user->id,
+                    'role' => $role,
+                    'expires_at' => $role->requiresExpiry() ? now()->addDay() : null,
+                ]);
+            }
+        });
     }
 
     /**

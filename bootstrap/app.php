@@ -13,6 +13,7 @@ use App\Http\Middleware\ScrubUserAgent;
 use App\Http\Middleware\SetSecurityHeaders;
 use App\Http\ResponseFormat;
 use App\Services\AuditLogger;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -79,10 +80,15 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => ResponseFormat::wantsJson($request));
 
+        // Never kept in the session to refill a form after a validation error.
+        $exceptions->dontFlash(['identity_number', 'identifier', 'value', 'address', 'narrative', 'date_of_birth']);
+
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
-            // Failed authorisation attempts are part of the audit trail. A
-            // record that cannot be written must not change the answer.
-            if ($response->getStatusCode() === 403) {
+            // Failed authorisation attempts are part of the audit trail,
+            // including a refusal answered as 404 so as not to confirm that a
+            // record exists. A record that cannot be written must not change
+            // the answer.
+            if ($response->getStatusCode() === 403 || $exception instanceof AuthorizationException || $exception->getPrevious() instanceof AuthorizationException) {
                 rescue(fn () => app(AuditLogger::class)->record('auth.access.denied', AuditOutcome::Blocked, $request->user(), [
                     'method' => $request->method(),
                     'route' => $request->route()?->getName(),
@@ -110,7 +116,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return back()->with('error', 'Too many attempts. Please wait a minute and try again.');
             }
 
-            if (! app()->hasDebugModeEnabled() && in_array($status, [403, 404, 429, 500, 503], true)) {
+            if (! app()->hasDebugModeEnabled() && in_array($status, [403, 404, 409, 410, 429, 500, 503], true)) {
                 // If the error page itself cannot be built (for example no
                 // built assets, mid-deployment), the framework's answer stands.
                 try {

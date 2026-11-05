@@ -12,7 +12,12 @@ import {
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { ElCard, ElIcon, ElTag } from 'element-plus';
 import { computed } from 'vue';
+import { usePermissions } from '@/composables/usePermissions';
 import { formatDateTime, formatRelative } from '@/lib/utils';
+import { index as casesIndex } from '@/routes/cases';
+import { index as personsIndex } from '@/routes/persons';
+import { index as reportsIndex } from '@/routes/reports';
+import { show as searchShow } from '@/routes/search';
 import { show as securityShow } from '@/routes/security';
 
 const props = defineProps<{
@@ -21,6 +26,11 @@ const props = defineProps<{
         recovery_codes_remaining: number;
         password_changed_at: string | null;
         previous_login: { at: string | null; ip: string | null } | null;
+    };
+    workload: {
+        open_cases: number | null;
+        assigned_to_me: number | null;
+        access_requests_to_decide: number | null;
     };
 }>();
 
@@ -41,28 +51,51 @@ const lowRecoveryCodes = computed(
     () => props.security.recovery_codes_remaining <= 3,
 );
 
-const modules = [
-    {
-        icon: Files,
-        title: 'Case management',
-        text: 'Register cases, assign investigators and track progress.',
-    },
-    {
-        icon: User,
-        title: 'Person records',
-        text: 'Biodata, identity verification and duplicate review.',
-    },
-    {
-        icon: Search,
-        title: 'Search & verification',
-        text: 'Purpose-bound, audited search across authorised areas.',
-    },
-    {
-        icon: DataAnalysis,
-        title: 'Reports',
-        text: 'Operational dashboards and de-identified statistics.',
-    },
-];
+const { can } = usePermissions();
+
+const counts = computed(() =>
+    [
+        { label: 'Open cases you can see', value: props.workload.open_cases },
+        { label: 'Assigned to you', value: props.workload.assigned_to_me },
+        {
+            label: 'Access requests to decide',
+            value: props.workload.access_requests_to_decide,
+        },
+    ].filter((count) => count.value !== null),
+);
+
+const modules = computed(() =>
+    [
+        {
+            icon: Files,
+            title: 'Cases',
+            text: 'Register cases, assign investigators and track progress.',
+            href: casesIndex.url(),
+            show: props.workload.open_cases !== null,
+        },
+        {
+            icon: User,
+            title: 'People',
+            text: 'Biodata, identity verification and case roles.',
+            href: personsIndex.url(),
+            show: can('persons.view'),
+        },
+        {
+            icon: Search,
+            title: 'Search',
+            text: 'Purpose-bound, audited search across authorised areas.',
+            href: searchShow.url(),
+            show: can('search.records'),
+        },
+        {
+            icon: DataAnalysis,
+            title: 'Reports',
+            text: 'Operational dashboards for the cases you can see.',
+            href: reportsIndex.url(),
+            show: can('reports.operational'),
+        },
+    ].filter((module) => module.show),
+);
 </script>
 
 <template>
@@ -199,39 +232,54 @@ const modules = [
 
             <ElCard shadow="never" class="lg:col-span-2">
                 <template #header>
-                    <div class="flex items-center justify-between">
-                        <h2 class="font-bold text-brand-900">Modules</h2>
-                        <ElTag type="info" effect="plain" round
-                            >Phase 2 rollout</ElTag
-                        >
-                    </div>
+                    <h2 class="font-bold text-brand-900">Your work</h2>
                 </template>
-                <ul class="grid gap-4 sm:grid-cols-2">
+                <ul
+                    v-if="counts.length > 0"
+                    class="mb-4 grid gap-4 sm:grid-cols-3"
+                >
                     <li
-                        v-for="module in modules"
-                        :key="module.title"
-                        class="flex gap-4 rounded-xl border border-dashed border-slate-300 p-4"
+                        v-for="count in counts"
+                        :key="count.label"
+                        class="rounded-xl bg-brand-50 p-4"
                     >
-                        <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"
-                        >
-                            <ElIcon :size="20"
-                                ><component :is="module.icon"
-                            /></ElIcon>
-                        </span>
-                        <span>
-                            <span class="block font-semibold text-slate-900">{{
-                                module.title
-                            }}</span>
-                            <span class="mt-0.5 block text-sm text-slate-500">{{
-                                module.text
-                            }}</span>
-                        </span>
+                        <span class="block text-2xl font-bold text-brand-900">{{
+                            count.value
+                        }}</span>
+                        <span class="text-sm text-slate-600">{{
+                            count.label
+                        }}</span>
                     </li>
                 </ul>
-                <p class="mt-4 text-xs text-slate-500">
-                    These modules become available as they pass security testing
-                    and institutional approval.
+                <ul v-if="modules.length > 0" class="grid gap-4 sm:grid-cols-2">
+                    <li v-for="module in modules" :key="module.title">
+                        <Link
+                            :href="module.href"
+                            class="flex gap-4 rounded-xl border border-slate-200 p-4 hover:border-brand-400 hover:bg-brand-50"
+                        >
+                            <span
+                                class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"
+                            >
+                                <ElIcon :size="20"
+                                    ><component :is="module.icon"
+                                /></ElIcon>
+                            </span>
+                            <span>
+                                <span
+                                    class="block font-semibold text-slate-900"
+                                    >{{ module.title }}</span
+                                >
+                                <span
+                                    class="mt-0.5 block text-sm text-slate-500"
+                                    >{{ module.text }}</span
+                                >
+                            </span>
+                        </Link>
+                    </li>
+                </ul>
+                <p v-else class="text-sm text-slate-500">
+                    No operational records are available to your account. If you
+                    need access, ask your supervisor to request a role for you.
                 </p>
             </ElCard>
         </div>

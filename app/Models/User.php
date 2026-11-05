@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
+use App\Enums\Permission;
+use App\Enums\Role;
 use App\Notifications\ResetPasswordLink;
 use App\Services\SecondFactor;
 use Database\Factories\UserFactory;
@@ -10,6 +12,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -26,6 +29,9 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $name
  * @property string|null $staff_number
  * @property string|null $job_title
+ * @property int|null $district_id
+ * @property int|null $station_id
+ * @property int|null $department_id
  * @property string $email
  * @property AccountStatus $status
  * @property Carbon|null $email_verified_at
@@ -59,6 +65,11 @@ class User extends Authenticatable
     protected $attributes = [
         'status' => 'pending',
     ];
+
+    /**
+     * @var list<Role>|null
+     */
+    private ?array $activeRoles = null;
 
     /**
      * The one way an email address is compared and stored: trimmed and
@@ -152,6 +163,96 @@ class User extends Authenticatable
     public function auditEvents(): HasMany
     {
         return $this->hasMany(AuditEvent::class);
+    }
+
+    /**
+     * @return BelongsTo<District, $this>
+     */
+    public function district(): BelongsTo
+    {
+        return $this->belongsTo(District::class);
+    }
+
+    /**
+     * @return BelongsTo<Station, $this>
+     */
+    public function station(): BelongsTo
+    {
+        return $this->belongsTo(Station::class);
+    }
+
+    /**
+     * @return BelongsTo<Department, $this>
+     */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * @return HasMany<RoleAssignment, $this>
+     */
+    public function roleAssignments(): HasMany
+    {
+        return $this->hasMany(RoleAssignment::class);
+    }
+
+    /**
+     * The roles this user holds now. Read fresh for every request, so a role
+     * that was revoked or has expired stops working at once.
+     *
+     * @return list<Role>
+     */
+    public function activeRoles(): array
+    {
+        if ($this->activeRoles === null) {
+            /** @var list<Role> $roles */
+            $roles = $this->roleAssignments()->active()->pluck('role')->unique()->values()->all();
+
+            $this->activeRoles = $roles;
+        }
+
+        return $this->activeRoles;
+    }
+
+    /**
+     * Forget the roles read for this instance, after they change.
+     */
+    public function forgetActiveRoles(): void
+    {
+        $this->activeRoles = null;
+    }
+
+    public function hasRole(Role $role): bool
+    {
+        return in_array($role, $this->activeRoles(), true);
+    }
+
+    /**
+     * Everything this user may do now. An account that cannot sign in may do
+     * nothing, whatever roles it still holds (for example in a queued job).
+     *
+     * @return list<Permission>
+     */
+    public function permissions(): array
+    {
+        if (! $this->isActive()) {
+            return [];
+        }
+
+        /** @var list<Permission> $permissions */
+        $permissions = collect($this->activeRoles())
+            ->flatMap(fn (Role $role): array => $role->permissions())
+            ->unique()
+            ->values()
+            ->all();
+
+        return $permissions;
+    }
+
+    public function hasPermission(Permission $permission): bool
+    {
+        return in_array($permission, $this->permissions(), true);
     }
 
     public function isActive(): bool

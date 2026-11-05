@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\Role;
+use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Fortify\Fortify;
@@ -46,6 +48,27 @@ expect()->extend('toBeOne', function () {
 | global functions to help you to reduce the number of lines of code in your test files.
 |
 */
+
+/**
+ * A signed-in-ready user holding the role, with their authenticator enrolled,
+ * placed at the station (a new one in a new district if none is given).
+ */
+function officer(Role $role, ?Station $station = null): User
+{
+    return User::factory()
+        ->withTwoFactor()
+        ->atStation($station ?? Station::factory()->create())
+        ->withRole($role)
+        ->create();
+}
+
+/**
+ * Treat the user's password as confirmed a moment ago.
+ */
+function confirmedPassword(): array
+{
+    return ['auth.password_confirmed_at' => time()];
+}
 
 /**
  * Move the clock to just after the start of an attempt-limit window, so a

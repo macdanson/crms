@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\Permission;
 use App\Models\User;
 use App\Services\SessionPolicy;
 use Closure;
@@ -79,6 +80,10 @@ class HandleInertiaRequests extends Middleware
                     'staff_number' => $user->staff_number,
                     'initials' => $user->initials(),
                     'two_factor_enabled' => $user->hasEnabledTwoFactorAuthentication(),
+                    // Only to show the right menu items; every action is
+                    // authorised again on the server.
+                    'permissions' => array_map(fn (Permission $permission): string => $permission->value, $user->permissions()),
+                    'unread_notifications' => $user->unreadNotifications()->count(),
                 ] : null,
             ],
             'session' => $user instanceof User && $session !== null ? [
